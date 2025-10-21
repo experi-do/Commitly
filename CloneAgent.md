@@ -1,12 +1,14 @@
 # Clone Agent 작동 설계
 
 ## 1. 역할 개요
-- `commitly git commit -m "<msg>"` 명령이 실행된 직후 트리거되어 `.commitly/hub` 워킹 트리를 최신 원격 상태로 동기화한다.
+- `commitly git commit -m "<msg>"` 명령이 실행된 직후 트리거되어 `.commitly_hub_{프로젝트명}` 워킹 트리를 최신 원격 상태로 동기화한다.
 - 로컬 커밋 내용을 허브에 안전하게 적용해 이후 에이전트(Code, Test, Refactoring, Sync)가 동일한 스냅샷을 기반으로 작업하도록 격리 실행 환경을 준비한다.
+- 허브는 프로젝트와 형제 레벨에 위치하며 Git 브랜치로 각 에이전트의 작업을 격리한다.
 
 ## 2. 에이전트 기능 명세
-- **허브 경로 초기화**: `.commitly/hub/<repo>/<branch>` 디렉터리 존재 여부 확인, 최초 실행 시 원격 저장소를 shallow clone한다.
+- **허브 경로 초기화**: `{프로젝트_부모}/.commitly_hub_{프로젝트명}` 디렉터리 존재 여부 확인, 최초 실행 시 원격 저장소를 shallow clone한다.
 - **원격 최신 이력 동기화**: 원격 `origin/<branch>`의 최신 커밋을 fetch 후 허브 워킹 트리를 fast-forward한다.
+- **에이전트 브랜치 생성**: 허브에서 `commitly/clone/{pipeline_id}` 브랜치를 생성하여 작업을 격리한다.
 - **로컬 커밋 스냅샷 수집**: 사용자가 방금 만든 커밋(들)의 SHA, 커밋 메시지, 변경 파일 목록, patch 를 RunContext에서 추출한다.
 - **허브 패치 적용**: 로컬 커밋과 허브 HEAD 사이 diff 를 계산하고 순차적으로 `git apply`(또는 파일 복사)로 허브 워킹 트리에 반영한다.
 - **충돌 검출 및 복구**: 패치 적용 중 reject, 삭제된 파일 등 충돌이 감지되면 허브 변경을 롤백하고 Code Agent 호출을 중단한다.
@@ -15,9 +17,11 @@
 ## 3. 입력 값 정의
 ### 3.1 RunContext
 - `workspace_path`: 사용자가 commit 한 로컬 리포지터리 루트 경로.
-- `hub_path`: `.commitly/hub/<repo>/<branch>` 절대 경로. 없으면 생성.
+- `hub_path`: `{프로젝트_부모}/.commitly_hub_{프로젝트명}` 절대 경로. 없으면 생성.
+- `project_name`: 프로젝트 이름 (허브 디렉토리명 생성에 사용).
 - `git_remote`: 동기화 대상 원격 저장소 이름과 URL (`origin` 기본).
 - `current_branch`: 사용자가 작업 중인 브랜치명.
+- `pipeline_id`: 현재 파이프라인 실행 고유 ID (UUID).
 - `latest_local_commits`: 직전 실행 이후 새로 생성된 커밋 목록. 각 항목은 `{sha, message, author, timestamp}` 구조.
 - `diff_provider`: 로컬 vs 허브 간 변경 사항을 patch 형식으로 반환하는 유틸리티 핸들.
 
@@ -44,7 +48,7 @@
 4. 로컬 커밋 diff 생성: `git diff <remote_head> <local_head>` 결과를 patch 리스트로 정리.
 5. 허브에 patch 적용: 파일 추가/수정/삭제를 허브 워킹 트리에 반영하고 각 단계 상태를 기록.
 6. 무결성 검증: `git status --short`로 기대한 변경만 남았는지 확인, 변칙이 있으면 롤백.
-7. 결과 저장 및 보고: JSON/로그 파일로 상태를 남기고 Code Agent 실행을 허용한다.
+7. 결과 저장 및 보고:  Code Agent 실행
 
 ## 6. 예외 및 오류 처리
 - **원격 fetch 실패**: 네트워크 오류 시 재시도(기본 3회) 후 실패 상태 기록, 사용자에게 즉시 알림.
@@ -59,18 +63,22 @@
 
 ## CloneAgent 핵심 로직 요약
 - 입력
-  - `workspace_path`, `hub_path`, `git_remote`, `current_branch`, `latest_local_commits`, `diff_provider`.
+  - `workspace_path`, `hub_path`, `project_name`, `git_remote`, `current_branch`, `pipeline_id`, `latest_local_commits`, `diff_provider`.
     - `workspace_path`: 사용자가 commit 한 로컬 리포지터리 루트 경로.
-    - `hub_path`: `.commitly/hub/<repo>/<branch>` 절대 경로. 없으면 생성.
+    - `hub_path`: `{프로젝트_부모}/.commitly_hub_{프로젝트명}` 절대 경로. 없으면 생성.
+    - `project_name`: 프로젝트 이름 (허브 디렉토리명 생성에 사용).
     - `git_remote`: 동기화 대상 원격 저장소 이름과 URL (`origin` 기본).
     - `current_branch`: 사용자가 작업 중인 브랜치명.
+    - `pipeline_id`: 현재 파이프라인 실행 고유 ID (UUID).
     - `latest_local_commits`: 직전 실행 이후 새로 생성된 커밋 목록. 각 항목은 `{sha, message, author, timestamp}` 구조.
     - `diff_provider`: 로컬 vs 허브 간 변경 사항을 patch 형식으로 반환하는 유틸리티 핸들.
 - 기능
   1. 허브 경로 준비 → 없으면 shallow clone, 있으면 최신 원격 상태로 fast-forward.
-  2. 로컬 최신 커밋 diff 추출 → patch 리스트 생성.
-  3. patch 순차 적용 → 실패 시 롤백 후 오류 리포트.
-  4. `git status`로 무결성 검증 → 이상 없으면 JSON/로그 기록.
+  2. `commitly/clone/{pipeline_id}` 브랜치 생성 (부모: `origin/{current_branch}`).
+  3. 로컬 최신 커밋 diff 추출 → patch 리스트 생성.
+  4. patch 순차 적용 → 실패 시 롤백 후 오류 리포트.
+  5. `git commit -m "Clone Agent: 로컬 커밋 적용"`으로 변경사항 커밋.
+  6. `git status`로 무결성 검증 → 이상 없으면 JSON/로그 기록.
 - 출력
-  - 허브 HEAD, 적용된 커밋, 변경 파일, 경고/오류가 담긴 `clone_agent.json`.
+  - 허브 HEAD, 적용된 커밋, 변경 파일, 에이전트 브랜치명, 경고/오류가 담긴 `clone_agent.json`.
   - 실행 로그(`clone_agent/<timestamp>.log`)와 필요 시 허브 스냅샷.

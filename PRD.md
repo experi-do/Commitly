@@ -53,7 +53,7 @@ Commitly는 개발자의 Git 커밋 이후 전 과정을 자동화하는 로컬 
 ```
 Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자 승인 시)Sync → Slack → Report
 ```
-- 모든 에이전트는 RunContext를 공유하며 `.commitly/hub` 허브 복제본에서 작업한다.
+- 모든 에이전트는 RunContext를 공유하며 `./commitly/hub` 허브 복제본에서 작업한다.
 - 실패 시에는 해당 단계에서 중단하고 Sync/Slack/Report 단계의 실패 상태가 사용자에게 전달되며 LangGraph 파이프라인이 종료된다.
 - 새로운 'commitly git commit -m <msg>' 입력 시, 위의 실패 지점이 아닌 파이프라인의 첫 시작인 Clone agent부터 시작한다.
 
@@ -115,7 +115,7 @@ Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자
   - `config/code_agent.yaml`: 정적 검사 명령, 실행 프로필(향후 확장).
   - `config/test_agent.yaml`: DB 연결, 후보 쿼리 생성 옵션.
 - CLI UX
-  - `commitly init`: commitly 활성화.
+  - `commitly init`: commitly 활성화.
   - `commitly status`: 최신 실행 결과 요약.
   - 'commitly report': 보고서 생성
 - VS Code UX
