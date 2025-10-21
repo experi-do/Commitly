@@ -3,7 +3,8 @@
 ## 역할 개요
 - Code Agent가 검증한 `.commitly_hub_{프로젝트명}` 코드를 기반으로 SQL 쿼리를 최적화합니다.
 - 허브의 `commitly/test/{pipeline_id}` 브랜치를 생성하여 작업을 격리합니다.
-- SQL 쿼리가 없으면 즉시 Refactoring Agent로 제어를 넘깁니다.
+- SQL 쿼리가 없으면 (`hasQuery=false`) 즉시 Refactoring Agent로 제어를 넘깁니다.
+- **SQL 최적화는 자동 적용**: 테스트 통과하면 사용자 승인 없이 자동으로 Refactoring Agent 진행.
 
 ---
 
@@ -74,10 +75,12 @@ test_command: "pytest" # 프로젝트 테스트 실행 명령어
 6.  **변경 사항 검증 (Verify Changes)**
     - `config.yaml`에 명시된 `test_command` (e.g., `pytest`)를 셸 명령으로 실행합니다.
     - **테스트 실패 시:**
-        - 작업 중단 함수 호출을 요청합니다.
+        - 원본 쿼리로 롤백 (최적화 전 상태로 복원)
+        - 작업 중단 함수 호출 (파이프라인 종료)
     - **테스트 성공 시:**
-        - 변경된 코드를 그대로 유지하고 다음 쿼리로 넘어갑니다.
+        - 최적화된 쿼리를 그대로 유지하고 다음 쿼리로 넘어갑니다.
 7.  **변경사항 커밋**
     - 모든 쿼리 최적화가 완료되면 `git commit -m "Test Agent: SQL 최적화 완료"`로 변경사항을 커밋합니다.
-8.  **에이전트 종료**
-    - `queryFileList`의 모든 쿼리에 대한 작업이 성공적으로 완료되면, `Refactoring Agent`로 제어를 넘깁니다.
+8.  **자동 진행**
+    - `queryFileList`의 모든 쿼리에 대한 작업이 성공적으로 완료되면, **자동으로 Refactoring Agent로 제어를 넘깁니다.**
+    - 사용자 승인 없이 자동 진행됩니다.

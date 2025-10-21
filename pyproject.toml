@@ -26,7 +26,7 @@ black = "^24.1.0"
 mypy = "^1.8.0"
 
 [tool.poetry.scripts]
-commitly = "commitly.main:cli"
+commitly = "commitly.cli.main:main"
 
 [build-system]
 requires = ["poetry-core"]
