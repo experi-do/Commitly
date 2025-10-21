@@ -3,7 +3,7 @@ init 명령어 구현
 """
 
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 import yaml
 
@@ -39,25 +39,26 @@ def init_command(args: Any) -> None:
 
     missing_items: list[str] = []
 
-    command, candidates = _discover_main_command(workspace_path)
+    main_command, main_candidates, main_info = _discover_main_command(workspace_path)
+    venv_path, venv_candidates = _detect_virtualenv(workspace_path)
 
     if config_path.exists():
         print(f"✓ 기존 설정 파일을 사용합니다: {config_path}")
-        if len(candidates) > 1:
-            _print_multiple_main_warning(candidates)
-        elif command:
-            _maybe_update_execution_command(config_path, command)
+        if len(main_candidates) > 1:
+            _print_multiple_main_warning(main_candidates)
+        elif main_command:
+            _maybe_update_execution_command(config_path, main_command)
         else:
             print(
                 "⚠️ 실행할 main.py 파일을 찾지 못했습니다. config.yaml의 execution.command를 직접 확인하세요."
             )
     else:
-        if command:
-            _write_config_with_command(config_path, command)
-            print(f"✓ 실행 커맨드를 자동 설정하여 config.yaml을 생성했습니다: {command}")
-        elif len(candidates) > 1:
+        if main_command:
+            _write_config_with_command(config_path, main_command)
+            print(f"✓ 실행 커맨드를 자동 설정하여 config.yaml을 생성했습니다: {main_command}")
+        elif len(main_candidates) > 1:
             missing_items.append("config.yaml")
-            _print_multiple_main_warning(candidates)
+            _print_multiple_main_warning(main_candidates)
         else:
             missing_items.append("config.yaml")
             print(
@@ -77,6 +78,32 @@ def init_command(args: Any) -> None:
             " 수동으로 설정을 마친 후 커맨드를 사용해주세요."
         )
         return
+
+    script_command = None
+    script_path = workspace_path / "commitly_exec.sh"
+
+    if main_info is None and main_candidates:
+        _print_multiple_main_warning(main_candidates)
+    elif main_info is None:
+        print("⚠️ 실행할 main.py 후보를 찾지 못했습니다. commitly_exec.sh는 생성되지 않았습니다.")
+
+    if venv_path is None:
+        if venv_candidates:
+            _print_multiple_virtualenv_warning(venv_candidates)
+        else:
+            print("⚠️ 가상환경을 찾지 못했습니다. 필요 시 commitly_exec.sh를 직접 수정하세요.")
+
+    if main_info and venv_path:
+        script_command = _write_exec_script(script_path, workspace_path, venv_path, main_info)
+        print(f"✓ commitly_exec.sh 생성 완료: {script_path}")
+        print("  ↳ 버전 관리에 추가하여 원격 저장소에도 반영해주세요.")
+
+    if script_command:
+        _maybe_update_execution_command(
+            config_path,
+            script_command,
+            allowed_existing=(None, "python main.py", main_command),
+        )
 
     print("\n✓ Commitly 초기화가 완료되었습니다!")
     print("\n다음 단계:")
@@ -118,7 +145,7 @@ def _update_gitignore(workspace_path: Path) -> None:
         print(".gitignore에 Commitly 항목이 이미 존재합니다")
 
 
-def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[str]]:
+def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[str], Optional[Tuple[str, bool]]]:
     """
     프로젝트 내 main.py 위치를 기반으로 실행 커맨드를 추론합니다.
 
@@ -133,7 +160,7 @@ def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[st
             candidates.append(main_path)
 
     if not candidates:
-        return None, []
+        return None, [], None
 
     candidates.sort(key=lambda path: (len(path.relative_to(workspace_path).parts), str(path)))
     candidate_info: List[Tuple[str, bool]] = []
@@ -147,15 +174,15 @@ def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[st
     relative_paths = [info[0] for info in candidate_info]
 
     if len(relative_paths) > 1:
-        return None, relative_paths
+        return None, relative_paths, None
 
     relative_path, has_package_init = candidate_info[0]
 
     if has_package_init:
         module_path = relative_path.replace("/", ".").removesuffix(".py")
-        return f"python -m {module_path}", relative_paths
+        return f"python -m {module_path}", relative_paths, (relative_path, True)
 
-    return f"python {relative_path}", relative_paths
+    return f"python {relative_path}", relative_paths, (relative_path, False)
 
 
 def _print_multiple_main_warning(candidates: List[str]) -> None:
@@ -170,6 +197,114 @@ def _print_multiple_main_warning(candidates: List[str]) -> None:
         print(f"   - {path}")
     print("config.yaml의 execution.command 값을 프로젝트에 맞게 수정한 뒤 다시 실행하세요.")
 
+
+def _detect_virtualenv(workspace_path: Path) -> Tuple[Optional[Path], List[str]]:
+    """
+    워크스페이스에서 사용할 가상환경 경로를 탐색합니다.
+
+    Args:
+        workspace_path: 워크스페이스 경로
+    """
+    candidates: List[Path] = []
+    for candidate in workspace_path.iterdir():
+        if not candidate.is_dir():
+            continue
+        if candidate.name.startswith(".") and candidate.name not in (".venv",):
+            continue
+
+        activate_paths = [candidate / "bin" / "activate", candidate / "Scripts" / "activate"]
+        if any(path.exists() for path in activate_paths):
+            candidates.append(candidate)
+
+    candidates.sort()
+
+    if not candidates:
+        return None, []
+
+    if len(candidates) > 1:
+        return None, [path.name for path in candidates]
+
+    return candidates[0], [candidates[0].name]
+
+
+def _print_multiple_virtualenv_warning(candidates: List[str]) -> None:
+    """
+    여러 개의 가상환경 디렉터리가 발견되었을 때 안내 메시지를 출력합니다.
+
+    Args:
+        candidates: 발견된 가상환경 디렉터리 목록
+    """
+    print("⚠️ 여러 개의 가상환경 후보를 발견했습니다. 사용하려는 환경을 선택한 뒤 commitly_exec.sh를 수정하세요:")
+    for path in candidates:
+        print(f"   - {path}")
+
+
+def _write_exec_script(
+    script_path: Path,
+    workspace_path: Path,
+    venv_path: Path,
+    main_info: Tuple[str, bool],
+) -> str:
+    """commitly_exec.sh 스크립트를 생성하고 실행 커맨드를 반환합니다.
+
+    Args:
+        script_path: 스크립트 경로
+        workspace_path: 워크스페이스 위치
+        venv_path: 사용할 가상환경 디렉터리 경로 (워크스페이스 기준)
+        main_info: (relative_path, is_module) 튜플
+
+    Returns:
+        config.yaml에서 사용할 실행 커맨드 (예: "./commitly_exec.sh")
+    """
+    relative_path, is_module = main_info
+
+    venv_rel = venv_path.name
+    workspace_venv = workspace_path / venv_path.name
+
+    script_lines = [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+        "",
+        f'VENV_DIR="${{SCRIPT_DIR}}/{venv_rel}"',
+        'if [[ -f "${VENV_DIR}/bin/activate" ]]; then',
+        '    # shellcheck disable=SC1090',
+        '    source "${VENV_DIR}/bin/activate"',
+        'elif [[ -f "${VENV_DIR}/Scripts/activate" ]]; then',
+        '    # shellcheck disable=SC1090',
+        '    source "${VENV_DIR}/Scripts/activate"',
+        'else',
+        '    if [[ -n "${COMMITLY_WORKSPACE_VENV:-}" ]]; then',
+        '        ALT_VENV="${COMMITLY_WORKSPACE_VENV}"',
+        '    else',
+        f'        ALT_VENV="{workspace_venv}"',
+        '    fi',
+        '    if [[ -f "${ALT_VENV}/bin/activate" ]]; then',
+        '        # shellcheck disable=SC1090',
+        '        source "${ALT_VENV}/bin/activate"',
+        '    elif [[ -f "${ALT_VENV}/Scripts/activate" ]]; then',
+        '        # shellcheck disable=SC1090',
+        '        source "${ALT_VENV}/Scripts/activate"',
+        '    else',
+        '        echo "[commitly] 경고: 가상환경을 찾지 못했습니다. ${VENV_DIR} 또는 ${ALT_VENV}" >&2',
+        '    fi',
+        'fi',
+        "",
+    ]
+
+    if is_module:
+        module_path = relative_path.replace("/", ".").removesuffix(".py")
+        script_lines.append(f'python -m {module_path} "$@"')
+    else:
+        script_lines.append(f'python "${{SCRIPT_DIR}}/{relative_path}" "$@"')
+
+    script_content = "\n".join(script_lines) + "\n"
+
+    script_path.write_text(script_content, encoding="utf-8")
+    script_path.chmod(0o755)
+
+    return "./" + script_path.name
 
 def _write_config_with_command(config_path: Path, command: str) -> None:
     """
@@ -239,13 +374,19 @@ report:
     config_path.write_text(default_config, encoding="utf-8")
 
 
-def _maybe_update_execution_command(config_path: Path, command: str) -> None:
+def _maybe_update_execution_command(
+    config_path: Path,
+    command: str,
+    *,
+    allowed_existing: Sequence[Optional[str]] = (None, "python main.py"),
+) -> None:
     """
     기존 config.yaml의 실행 커맨드를 필요 시 자동 업데이트합니다.
 
     Args:
         config_path: 설정 파일 경로
         command: 감지된 실행 커맨드
+        allowed_existing: 덮어쓸 수 있는 기존 command 값
     """
     try:
         with open(config_path, "r", encoding="utf-8") as config_file:
@@ -257,7 +398,7 @@ def _maybe_update_execution_command(config_path: Path, command: str) -> None:
     execution = config_data.get("execution", {})
     current_command = execution.get("command")
 
-    if current_command and current_command != "python main.py":
+    if current_command not in allowed_existing:
         return
 
     execution["command"] = command
