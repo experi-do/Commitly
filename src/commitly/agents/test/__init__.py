@@ -1,6 +1,4 @@
-"""
-Test Agent ¨È
-"""
+"""Test Agent."""
 
 from commitly.agents.test.agent import TestAgent
 

@@ -1,6 +1,4 @@
-"""
-Refactoring Agent ¨È
-"""
+"""Refactoring Agent."""
 
 from commitly.agents.refactoring.agent import RefactoringAgent
 

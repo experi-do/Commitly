@@ -1,6 +1,4 @@
-"""
-Report Agent ¨È
-"""
+"""Report Agent."""
 
 from commitly.agents.report.agent import ReportAgent
 

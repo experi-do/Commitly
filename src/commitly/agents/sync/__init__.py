@@ -1,6 +1,4 @@
-"""
-Sync Agent ¨È
-"""
+"""Sync Agent."""
 
 from commitly.agents.sync.agent import SyncAgent
 

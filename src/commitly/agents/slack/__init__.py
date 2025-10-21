@@ -1,6 +1,4 @@
-"""
-Slack Agent ¨È
-"""
+"""Slack Agent."""
 
 from commitly.agents.slack.agent import SlackAgent
 

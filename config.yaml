@@ -1,0 +1,55 @@
+# Commitly 설정 파일
+
+# Git 설정
+git:
+  remote: origin
+
+# LLM 설정
+llm:
+  enabled: true
+  provider: openai
+  model: gpt-4o-mini
+  api_key: ${OPENAI_API_KEY}
+
+# 실행 프로필
+execution:
+  command: python main.py
+  timeout: 300
+
+# 테스트 프로필
+test:
+  command: pytest
+  timeout: 300
+
+# 데이터베이스 설정 (SQL 최적화용)
+database:
+  host: localhost
+  port: 5432
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
+  dbname: ${DB_NAME}
+
+# 리팩토링 규칙
+refactoring:
+  rules: |
+    Remove duplicate code
+    Add exception handling for risky operations (I/O, network, DB)
+
+# Slack 설정
+slack:
+  enabled: false
+  time_range_days: 7
+  require_tag: false
+  keywords: []
+  save_path: .commitly/slack/matches.json
+
+# 보고서 설정
+report:
+  format: md
+  output_path: .commitly/reports
+  filter:
+    labels: []
+    authors: []
+  privacy:
+    anonymize_user: false
+    redact_patterns: []
