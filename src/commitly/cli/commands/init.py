@@ -136,12 +136,26 @@ def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[st
         return None, []
 
     candidates.sort(key=lambda path: (len(path.relative_to(workspace_path).parts), str(path)))
-    relative_paths = [candidate.relative_to(workspace_path).as_posix() for candidate in candidates]
+    candidate_info: List[Tuple[str, bool]] = []
+    for candidate in candidates:
+        relative_parts = candidate.relative_to(workspace_path).parts
+        relative_path = "/".join(relative_parts)
+        parent_dir = candidate.parent / "__init__.py"
+        has_package_init = parent_dir.exists()
+        candidate_info.append((relative_path, has_package_init))
+
+    relative_paths = [info[0] for info in candidate_info]
 
     if len(relative_paths) > 1:
         return None, relative_paths
 
-    return f"python {relative_paths[0]}", relative_paths
+    relative_path, has_package_init = candidate_info[0]
+
+    if has_package_init:
+        module_path = relative_path.replace("/", ".").removesuffix(".py")
+        return f"python -m {module_path}", relative_paths
+
+    return f"python {relative_path}", relative_paths
 
 
 def _print_multiple_main_warning(candidates: List[str]) -> None:
