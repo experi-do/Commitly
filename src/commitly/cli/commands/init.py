@@ -3,7 +3,7 @@ init 명령어 구현
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional, Tuple
 
 import yaml
 
@@ -39,11 +39,13 @@ def init_command(args: Any) -> None:
 
     missing_items: list[str] = []
 
-    command = _discover_main_command(workspace_path)
+    command, candidates = _discover_main_command(workspace_path)
 
     if config_path.exists():
         print(f"✓ 기존 설정 파일을 사용합니다: {config_path}")
-        if command:
+        if len(candidates) > 1:
+            _print_multiple_main_warning(candidates)
+        elif command:
             _maybe_update_execution_command(config_path, command)
         else:
             print(
@@ -53,6 +55,9 @@ def init_command(args: Any) -> None:
         if command:
             _write_config_with_command(config_path, command)
             print(f"✓ 실행 커맨드를 자동 설정하여 config.yaml을 생성했습니다: {command}")
+        elif len(candidates) > 1:
+            missing_items.append("config.yaml")
+            _print_multiple_main_warning(candidates)
         else:
             missing_items.append("config.yaml")
             print(
@@ -113,7 +118,7 @@ def _update_gitignore(workspace_path: Path) -> None:
         print(".gitignore에 Commitly 항목이 이미 존재합니다")
 
 
-def _discover_main_command(workspace_path: Path) -> Optional[str]:
+def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[str]]:
     """
     프로젝트 내 main.py 위치를 기반으로 실행 커맨드를 추론합니다.
 
@@ -128,12 +133,28 @@ def _discover_main_command(workspace_path: Path) -> Optional[str]:
             candidates.append(main_path)
 
     if not candidates:
-        return None
+        return None, []
 
     candidates.sort(key=lambda path: (len(path.relative_to(workspace_path).parts), str(path)))
-    best = candidates[0]
-    relative = best.relative_to(workspace_path)
-    return f"python {relative.as_posix()}"
+    relative_paths = [candidate.relative_to(workspace_path).as_posix() for candidate in candidates]
+
+    if len(relative_paths) > 1:
+        return None, relative_paths
+
+    return f"python {relative_paths[0]}", relative_paths
+
+
+def _print_multiple_main_warning(candidates: List[str]) -> None:
+    """
+    여러 개의 main.py가 발견되었을 때 안내 메시지를 출력합니다.
+
+    Args:
+        candidates: 발견된 main.py 상대 경로 목록
+    """
+    print("⚠️ 여러 개의 main.py 파일을 발견했습니다. 실행 커맨드를 직접 설정해주세요:")
+    for path in candidates:
+        print(f"   - {path}")
+    print("config.yaml의 execution.command 값을 프로젝트에 맞게 수정한 뒤 다시 실행하세요.")
 
 
 def _write_config_with_command(config_path: Path, command: str) -> None:
