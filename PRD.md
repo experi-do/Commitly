@@ -7,12 +7,12 @@
 - 배포 범위: 내부 개발 조직 공유
 
 ## 2. 서비스 개요
-Commitly는 개발자의 Git 커밋 이후 전 과정을 자동화하는 로컬 전용 멀티 에이전트 파이프라인이다. CLI 또는 VS Code 확장으로 `commitly` 명령을 실행하면 Clone → Code → Test → Refactoring → Sync → Slack → Report 에이전트가 순차적으로 동작해 코드 실행, SQL 검증, 리팩토링, 배포 준비, 슬랙 공유, 보고서 생성까지 자동 처리한다. 최종 산출물은 JSON/Markdown 보고서와 Slack 메시지로 제공되며, 팀은 빠르게 변경 영향과 품질 상태를 확인할 수 있다.
+Commitly는 개발자의 Git 커밋 이후 전 과정을 자동화하는 로컬 전용 멀티 에이전트 파이프라인이다. 'commitly init'를 터미널에 입력하여 CLI 또는 VS Code 확장으로 `commitly git commit -m "commit message'를 CLI에 입력하면 git commit이 실행됨가 동시에 Clone → Code → Test → Refactoring → Sync → Slack → Report 에이전트가 순차적으로 동작해 코드 실행, SQL 검증, 리팩토링, 배포 준비, 슬랙 공유, 보고서 생성까지 자동 처리한다. 최종 산출물은 JSON/Markdown 보고서와 Slack 메시지로 제공되며, 팀은 빠르게 변경 영향과 품질 상태를 확인할 수 있다.
 
 ## 3. 문제 정의
 - 커밋 이후 검증·테스트·보고 절차가 수동으로 이뤄져 시간과 품질이 들쭉날쭉하다.
 - SQL 튜닝, 코드 리팩토링, 보고서 작성은 경험 의존적이며 지식이 축적되지 않는다.
-- Slack, Jira 등 협업 도구와 연결이 느슨해 히스토리 추적이 어렵다.
+- Slack, Jira 등 협업 도구와 연결이 느슨해 히스토리 및 이슈에 대한 트러블슈팅 추적이 어렵다.
 - 작은 핫픽스라도 배포 안정성, 테스트 결과, 코드 규약 준수 여부를 한 번에 확인하기 어렵다.
 
 ## 4. 목표 및 성공 지표
@@ -43,60 +43,44 @@ Commitly는 개발자의 Git 커밋 이후 전 과정을 자동화하는 로컬 
 3. 커밋 이벤트를 트리거로 LangGraph 파이프라인이 자동 실행된다.
 4. 각 에이전트의 결과가 CLI 터미널에 스트리밍되며, 사용자 승인이 필요한 단계(Code, Test, Refactoring, Sync)에서 입력을 기다린다.
 5. Sync Agent 승인이 완료되면 원격 저장소 push 및 로컬 워킹 트리 반영이 자동 수행된다.
-6. Slack Agent가 결과 요약을 팀 채널에 게시하고, Report Agent가 기간별 보고서를 업데이트한다.
+6. Slack Agent가 결과 요약을 팀 채널에 게시한다.
+7. 'commitly report' 실행 시, Report Agent가 기간별 보고서를 작성하여 {프로젝트 경로}/report/{yy-mm-dd}-{issue}-{trouble shooting}.md로 저장한다.
 
 ### 7.2 VS Code 확장 시나리오
-1. 사용자는 Commitly 확장을 설치한 후 명령 팔레트에서 `Commitly: Scan` 실행.
-2. 확장은 백그라운드에서 `commitly` CLI를 실행하고 로그를 패널에 출력한다.
-3. 중간 승인 요청은 VS Code 알림/입력 패널로 수집한다.
-4. 완료 후 Slack 메시지 링크와 보고서 파일 경로를 패널에서 바로 확인한다.
+- 위의 전반적인 내용들은 VS Code Extension으로 배포하는 것을 목표로 한다.
 
 ## 8. 에이전트 오케스트레이션 개요
 ```
-Clone → Code → (성공 시) Test → (성공 시) Refactoring → Sync → Slack → Report
+Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자 승인 시)Sync → Slack → Report
 ```
 - 모든 에이전트는 RunContext를 공유하며 `.commitly/hub` 허브 복제본에서 작업한다.
-- 실패 시에는 해당 단계에서 중단하고 Sync/Slack/Report 단계에 실패 상태가 전달된다.
+- 실패 시에는 해당 단계에서 중단하고 Sync/Slack/Report 단계의 실패 상태가 사용자에게 전달되며 LangGraph 파이프라인이 종료된다.
+- 새로운 'commitly git commit -m <msg>' 입력 시, 위의 실패 지점이 아닌 파이프라인의 첫 시작인 Clone agent부터 시작한다.
+
+# 아래의 Agent별 입력과 출력은 무시하며, Architecture.md를 참고하여 입력과 출력 구조를 생성한다.
 
 ### 8.1 Clone Agent
-- **트리거**: 커밋 직후.
-- **입력**: `workspace_path`, `hub_path`, `git_remote`, 로컬 최신 커밋 diff.
 - **핵심 기능**: 원격 저장소 최신 상태로 허브 동기화 → 로컬 커밋 패치 적용 → 무결성 검증 → JSON 결과 기록.
-- **출력**: `clone_agent.json` (허브 HEAD, 적용 커밋, 변경 파일, 경고).
 
 ### 8.2 Code Agent
-- **트리거**: Clone Agent 성공 시.
-- **입력**: 허브 경로, `clone_agent.json`, 실행 환경 설정.
 - **핵심 기능(MVP)**: 정적 점검(린트/타입) → `python main.py` 실행 → 오류 요약 → 사용자 승인 여부 수집.
-- **출력**: `code_agent.json` (검사 결과, 오류, 다음 단계 플래그), 실행 로그, 요약 리포트.
 
 ### 8.3 Test Agent
-- **트리거**: Code Agent 성공 후.
-- **입력**: `code_agent.json`, `hasQuery` (Boolean), `queryFileList` (SQL 위치 JSON).
 - **핵심 기능**:
   - `hasQuery == False`: 즉시 Refactoring Agent로 넘김.
-  - `hasQuery == True`: 각 파일/함수/라인별로 SQL 파싱 → LLM으로 동등 기능 후보 쿼리 3~5개 생성 → `EXPLAIN` 비교 → 가장 효율적인 쿼리 적용(원본이 최적이면 유지) → `python main.py` 재실행 → 오류 발생 시 원본 복구 후 사용자에게 보고.
-- **출력**: 최종 채택 쿼리, 실행 로그, 성능 비교 결과 `test_agent.json`.
+  - `hasQuery == True`: 각 파일/함수/라인별로 SQL 파싱 → LLM으로 동등 기능 후보 쿼리 3개 생성 → `EXPLAIN` 비교 → 가장 효율적인 쿼리 적용(원본이 최적이면 유지) → `python main.py` 재실행 → 오류 발생 시 원본 복구 후 사용자에게 보고.
 
 ### 8.4 Refactoring Agent
-- **트리거**: Test Agent 성공 후.
 - **핵심 기능**: 팀 아키텍처 가이드 기반으로 중복 제거, 예외 처리, 로그 개선 등을 제안/자동 적용 → 사용자 승인 루프.
-- **출력**: 적용/제안된 변경 사항, 위반 규칙, 재실행 필요 여부 `refactoring_agent.json`.
 
 ### 8.5 Sync Agent
-- **트리거**: Refactoring 완료 및 사용자 승인.
 - **핵심 기능**: 허브 변경사항을 로컬 워킹 트리와 원격 저장소에 반영(pull-safe, push) → 결과 JSON 저장 → 표준 커밋 메시지 추천(`[hotfix] ...`).
-- **출력**: `sync_agent.json` (push 여부, 원격 URL, 변경 파일, 요약 메시지).
 
 ### 8.6 Slack Agent
-- **트리거**: Sync Agent 이후.
 - **핵심 기능**: Sync/Code/Test/Refactoring JSON을 집계 → Slack 메시지 및 파일 매칭 → 채널/DM 전송 → 전송 내역 로그 저장.
-- **출력**: Slack 메시지 ID, 전송 채널, 첨부 파일 매핑 `slack_agent.json`.
 
 ### 8.7 Report Agent
-- **트리거**: Slack Agent 이후 또는 배치 실행.
 - **핵심 기능**: Slack Agent 캐시를 읽어 기간별(일/주/월) 보고서를 Markdown/JSON으로 생성 → 로컬 `daily/`, `.commitly/reports/`에 저장.
-- **출력**: 보고서 파일 경로, 생성 시각, 포함 커밋 리스트 `report_agent.json`.
 
 ## 9. 핵심 기능 요구사항
 ### 9.1 Git/Hub 오케스트레이션
