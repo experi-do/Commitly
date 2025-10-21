@@ -77,10 +77,9 @@ Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자
 - **핵심 기능**: 허브 변경사항을 로컬 워킹 트리와 원격 저장소에 반영(pull-safe, push) → 결과 JSON 저장 → 표준 커밋 메시지 추천(`[hotfix] ...`).
 
 ### 8.6 Slack Agent
-- **핵심 기능**: Sync/Code/Test/Refactoring JSON을 집계 → Slack 메시지 및 파일 매칭 → 채널/DM 전송 → 전송 내역 로그 저장.
-
+- **핵심 기능**: Sync/Code/Test/Refactoring JSON을 집계 → Slack 메시지 및 파일 매칭 → 채널/DM 전송 → 
 ### 8.7 Report Agent
-- **핵심 기능**: Slack Agent 캐시를 읽어 기간별(일/주/월) 보고서를 Markdown/JSON으로 생성 → 로컬 `daily/`, `.commitly/reports/`에 저장.
+- **핵심 기능**: Slack Agent 캐시를 읽어 기간별(일/주/월) 보고서를 Markdown/JSON으로 생성 → 로컬 `reports/`, `.commitly/reports/`에 저장.
 
 ## 9. 핵심 기능 요구사항
 ### 9.1 Git/Hub 오케스트레이션
@@ -94,14 +93,12 @@ Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자
 - 실행 로그는 최대 5MB까지 저장하며, 초과 시 압축 후 경로만 안내한다.
 
 ### 9.3 SQL 최적화
-- SQL 파싱은 기본 파이썬 AST + 정규식 조합으로 구현한다.
+- SQL 파싱은 기본 파이썬 AST + 정규식 조합으로 구현한다.(더 좋은 방안이 있다면 대체 가능)
 - `EXPLAIN` 실행은 로컬 Postgres (docker/postgres-compose.yaml 기반)를 기본으로 한다.
 - 후보 쿼리 실행 시 오류가 발생하면 해당 후보를 제외하고 최대 3회까지 대체 후보를 요청한다.
 
 ### 9.4 리팩토링
 - 팀 규칙은 `config/refactoring_rules.yaml`에서 정의하며, 미정이면 기본 템플릿을 사용.
-- 자동 수정 전 사용자 승인 옵션 제공(스킵 가능).
-- Refactoring Agent가 제안만 하고 수동 확인을 기다리는 모드도 지원한다.
 
 ### 9.5 동기화/배포
 - Sync는 push 전 사용자 확인을 반드시 거친다.
@@ -118,9 +115,9 @@ Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자
   - `config/code_agent.yaml`: 정적 검사 명령, 실행 프로필(향후 확장).
   - `config/test_agent.yaml`: DB 연결, 후보 쿼리 생성 옵션.
 - CLI UX
-  - `commitly init`: 프로젝트 등록.
+  - `commitly init`: commitly 활성화.
   - `commitly status`: 최신 실행 결과 요약.
-  - `commitly restore`: 실패 시 허브 스냅샷을 워킹 트리에 적용(향후 확장).
+  - 'commitly report': 보고서 생성
 - VS Code UX
   - 상태 패널: 현재 실행 단계, 로그, 사용자 입력 모달.
   - 설정 UI: Slack 채널, 테스트 타임아웃, 리포트 저장 경로.
@@ -148,7 +145,6 @@ Clone → Code → (성공 시) Test → (성공 시) Refactoring → (사용자
 ## 14. 향후 확장 로드맵
 1. **Auto Change Impact Brief**: Code Agent에서 영향 모듈·테이블·API 리스트를 추출해 Slack과 보고서에 첨부.
 2. **SQL 개선 위키화**: Test Agent 결과를 지식 베이스에 축적, 유사 패턴 감지 시 자동 제안.
-3. **안전망 브랜치 자동화**: 실패 시 임시 브랜치/스냅샷을 생성해 `commitly restore` 명령으로 복구.
 4. **QA 티켓 생성**: 영향도 기반으로 Jira/Asana 티켓을 자동 등록.
 5. **Refactoring 규칙 학습**: 사용자 거부 데이터를 축적해 규칙을 자동 조정.
 6. **대시보드/리포트 패널**: Slack/Report 데이터를 시각화해 릴리즈 리더용 웹 패널 제공.
