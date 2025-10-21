@@ -31,13 +31,15 @@ git switch -c feat/yourname_feature
 ```
 
 ## 🧩 3) Commit Convention (Gitmoji)
-타입	예시	의미
-✨ :sparkles: feat:	:sparkles: feat: add ScoringAgent decision rule	기능 추가
-🐛 :bug: fix:	:bug: fix: handle empty serp results	버그 수정
-📝 :memo: docs:	:memo: docs: write architecture.md (v2)	문서 작성
-♻️ :recycle: refactor:	:recycle: refactor: split chunks by label	리팩터링
-✅ :white_check_mark: test:	:white_check_mark: test: add chroma search tests	테스트
-🚧 :construction: chore:	:construction: chore: add logging config	빌드/설정
+
+| 타입                           | 예시                                                 | 의미    |
+| ---------------------------- | -------------------------------------------------- | ----- |
+| ✨ `:sparkles: feat:`         | `:sparkles: feat: add ScoringAgent decision rule`  | 기능 추가 |
+| 🐛 `:bug: fix:`              | `:bug: fix: handle empty serp results`             | 버그 수정 |
+| 📝 `:memo: docs:`            | `:memo: docs: write architecture.md (v2)`          | 문서 작성 |
+| ♻️ `:recycle: refactor:`     | `:recycle: refactor: split chunks by label`        | 리팩터링  |
+| ✅ `:white_check_mark: test:` | `:white_check_mark: test: add chroma search tests` | 테스트   |
+| 🚧 `:construction: chore:`   | `:construction: chore: add logging config`         | 빌드/설정 |
 
 커밋 메시지 형식:
 :emoji: type: subject
