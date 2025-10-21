@@ -5,6 +5,8 @@ init 명령어 구현
 from pathlib import Path
 from typing import Any, Optional
 
+import yaml
+
 
 def init_command(args: Any) -> None:
     """
@@ -37,10 +39,17 @@ def init_command(args: Any) -> None:
 
     missing_items: list[str] = []
 
+    command = _discover_main_command(workspace_path)
+
     if config_path.exists():
         print(f"✓ 기존 설정 파일을 사용합니다: {config_path}")
+        if command:
+            _maybe_update_execution_command(config_path, command)
+        else:
+            print(
+                "⚠️ 실행할 main.py 파일을 찾지 못했습니다. config.yaml의 execution.command를 직접 확인하세요."
+            )
     else:
-        command = _discover_main_command(workspace_path)
         if command:
             _write_config_with_command(config_path, command)
             print(f"✓ 실행 커맨드를 자동 설정하여 config.yaml을 생성했습니다: {command}")
@@ -193,3 +202,35 @@ report:
 """
 
     config_path.write_text(default_config, encoding="utf-8")
+
+
+def _maybe_update_execution_command(config_path: Path, command: str) -> None:
+    """
+    기존 config.yaml의 실행 커맨드를 필요 시 자동 업데이트합니다.
+
+    Args:
+        config_path: 설정 파일 경로
+        command: 감지된 실행 커맨드
+    """
+    try:
+        with open(config_path, "r", encoding="utf-8") as config_file:
+            config_data = yaml.safe_load(config_file) or {}
+    except (yaml.YAMLError, OSError) as exc:
+        print(f"⚠️ config.yaml을 읽는 동안 오류가 발생했습니다: {exc}")
+        return
+
+    execution = config_data.get("execution", {})
+    current_command = execution.get("command")
+
+    if current_command and current_command != "python main.py":
+        return
+
+    execution["command"] = command
+    config_data["execution"] = execution
+
+    try:
+        with open(config_path, "w", encoding="utf-8") as config_file:
+            yaml.safe_dump(config_data, config_file, allow_unicode=True, sort_keys=False)
+        print(f"✓ 실행 커맨드를 자동으로 {command} 값으로 업데이트했습니다.")
+    except OSError as exc:
+        print(f"⚠️ config.yaml을 업데이트하는 동안 오류가 발생했습니다: {exc}")
