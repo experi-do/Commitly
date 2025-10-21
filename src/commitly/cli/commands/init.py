@@ -2,7 +2,6 @@
 init 명령어 구현
 """
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -30,134 +29,38 @@ def init_command(args: Any) -> None:
 
     print(f"✓ .commitly 디렉토리 생성 완료: {commitly_dir}")
 
-    # 설정 파일 템플릿 복사
-    config_path = workspace_path / args.config
-
-    if not config_path.exists():
-        # 템플릿에서 복사
-        template_path = Path(__file__).parent.parent.parent / "templates" / "config.yaml"
-
-        if template_path.exists():
-            shutil.copy(template_path, config_path)
-            print(f"✓ 설정 파일 생성 완료: {config_path}")
-        else:
-            # 템플릿 없으면 기본 설정 생성
-            _create_default_config(config_path)
-            print(f"✓ 기본 설정 파일 생성 완료: {config_path}")
-    else:
-        print(f"설정 파일이 이미 존재합니다: {config_path}")
-
-    # .env 파일 생성 (없으면)
-    env_path = workspace_path / ".env"
-
-    if not env_path.exists():
-        _create_default_env(env_path)
-        print(f"✓ .env 파일 생성 완료: {env_path}")
-    else:
-        print(f".env 파일이 이미 존재합니다: {env_path}")
-
     # .gitignore 업데이트
     _update_gitignore(workspace_path)
 
-    print("\n✓ Commitly 초기화 완료!")
+    config_path = workspace_path / args.config
+    env_path = workspace_path / ".env"
+
+    missing_items: list[str] = []
+
+    if config_path.exists():
+        print(f"✓ 기존 설정 파일을 사용합니다: {config_path}")
+    else:
+        missing_items.append("config.yaml")
+        print("⚠️ config.yaml 파일이 존재하지 않습니다. 프로젝트에 맞는 설정 파일을 준비해주세요.")
+
+    if env_path.exists():
+        print(f"✓ 기존 .env 파일을 사용합니다: {env_path}")
+    else:
+        missing_items.append(".env")
+        print("⚠️ .env 파일이 존재하지 않습니다. 필요한 환경 변수를 포함한 .env 파일을 준비해주세요.")
+
+    if missing_items:
+        print(
+            "\n⚠️ 위 파일을 프로젝트 루트에 준비한 뒤 다시 'commitly init'을 실행하거나,"
+            " 수동으로 설정을 마친 후 커맨드를 사용해주세요."
+        )
+        return
+
+    print("\n✓ Commitly 초기화가 완료되었습니다!")
     print("\n다음 단계:")
-    print("1. config.yaml 파일을 프로젝트에 맞게 수정하세요")
-    print("2. .env 파일에 API 키를 입력하세요")
+    print("1. config.yaml 내용을 확인하고 필요한 값이 정확한지 검증하세요")
+    print("2. .env 파일에 필요한 API 키와 환경 변수가 설정되어 있는지 확인하세요")
     print("3. commitly commit 명령어로 파이프라인을 실행하세요")
-
-
-def _create_default_config(config_path: Path) -> None:
-    """
-    기본 설정 파일 생성
-
-    Args:
-        config_path: 설정 파일 경로
-    """
-    default_config = """# Commitly 설정 파일
-
-# Git 설정
-git:
-  remote: origin
-
-# LLM 설정
-llm:
-  enabled: true
-  provider: openai
-  model: gpt-4o-mini
-  api_key: ${OPENAI_API_KEY}
-
-# 실행 프로필
-execution:
-  command: python main.py
-  timeout: 300
-
-# 테스트 프로필
-test:
-  command: pytest
-  timeout: 300
-
-# 데이터베이스 설정 (SQL 최적화용)
-database:
-  host: localhost
-  port: 5432
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
-  dbname: ${DB_NAME}
-
-# 리팩토링 규칙
-refactoring:
-  rules: |
-    Remove duplicate code
-    Add exception handling for risky operations (I/O, network, DB)
-
-# Slack 설정
-slack:
-  enabled: false
-  time_range_days: 7
-  require_tag: false
-  keywords: []
-  save_path: .commitly/slack/matches.json
-
-# 보고서 설정
-report:
-  format: md
-  output_path: .commitly/reports
-  filter:
-    labels: []
-    authors: []
-  privacy:
-    anonymize_user: false
-    redact_patterns: []
-"""
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        f.write(default_config)
-
-
-def _create_default_env(env_path: Path) -> None:
-    """
-    기본 .env 파일 생성
-
-    Args:
-        env_path: .env 파일 경로
-    """
-    default_env = """# Commitly 환경 변수
-
-# OpenAI API Key
-OPENAI_API_KEY=your_openai_api_key_here
-
-# Database Configuration
-DB_USER=postgres
-DB_PASSWORD=your_db_password_here
-DB_NAME=your_database_name
-
-# Slack Configuration (optional)
-SLACK_BOT_TOKEN=your_slack_bot_token_here
-SLACK_CHANNEL_ID=your_slack_channel_id_here
-"""
-
-    with open(env_path, "w", encoding="utf-8") as f:
-        f.write(default_env)
 
 
 def _update_gitignore(workspace_path: Path) -> None:
