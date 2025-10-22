@@ -8,7 +8,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from langgraph.graph import StateGraph, END
@@ -35,7 +35,7 @@ class CommitlyPipeline:
     LangGraph를 사용하여 모든 에이전트를 순차적으로 실행
     """
 
-    def __init__(self, workspace_path: Path, config_path: Path) -> None:
+    def __init__(self, workspace_path: Path, config_path: Path, user_message: Optional[str] = None) -> None:
         """
         Args:
             workspace_path: 프로젝트 루트 경로
@@ -56,6 +56,9 @@ class CommitlyPipeline:
 
         # RunContext 초기화
         self.run_context: RunContext = self._init_run_context()
+
+        if user_message:
+            self.run_context["user_commit_message"] = user_message
 
     def _init_llm_client(self) -> LLMClient:
         """LLM 클라이언트 초기화"""

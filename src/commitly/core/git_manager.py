@@ -172,6 +172,19 @@ class GitManager:
         except GitCommandError as e:
             raise RuntimeError(f"Push 실패: {e}") from e
 
+    def checkout(self, branch: str) -> None:
+        """
+        브랜치 체크아웃
+
+        Args:
+            branch: 체크아웃할 브랜치 이름
+        """
+        try:
+            self.repo.git.checkout(branch)
+            self.logger.info(f"브랜치 체크아웃: {branch}")
+        except Exception as e:
+            raise RuntimeError(f"브랜치 체크아웃 실패: {branch} - {e}") from e
+
     def get_diff(self, from_ref: str, to_ref: str = "HEAD") -> str:
         """
         두 ref 간의 diff 가져오기

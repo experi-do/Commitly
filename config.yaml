@@ -20,6 +20,9 @@ execution:
 test:
   timeout: 300
 
+pipeline:
+  cleanup_hub_on_failure: false
+
 # 데이터베이스 설정 (SQL 최적화용)
 database:
   host: localhost
@@ -33,6 +36,10 @@ refactoring:
   rules: |
     Remove duplicate code
     Add exception handling for risky operations (I/O, network, DB)
+    Do not erase import statements
+    If import statements are missing, add them
+    If import statements are unused, remove them
+    
 
 # Slack 설정
 slack:

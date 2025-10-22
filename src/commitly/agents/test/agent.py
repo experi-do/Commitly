@@ -174,8 +174,8 @@ class TestAgent(BaseAgent):
                 "optimized_query": best_query,
                 "improved": improved,
                 "original_cost": 0.0,  # 원본 비용 계산 가능
-                "optimized_cost": best_explain["total_cost"],
-                "execution_time": best_explain["execution_time"],
+                "optimized_cost": best_explain.get("total_cost"),
+                "execution_time": best_explain.get("execution_time"),
             }
 
             optimized_results.append(optimized_info)

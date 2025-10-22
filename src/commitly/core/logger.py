@@ -87,6 +87,10 @@ class CommitlyLogger:
         """치명적 에러 로그"""
         self.logger.critical(message)
 
+    def exception(self, message: str) -> None:
+        """예외 로그 (스택 트레이스 포함)"""
+        self.logger.exception(message)
+
     def log_command(self, command: str, output: str, exit_code: int) -> None:
         """
         명령어 실행 로그

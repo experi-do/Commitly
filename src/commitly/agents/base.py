@@ -5,6 +5,7 @@ BaseAgent 추상 클래스
 """
 
 import json
+import traceback
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -111,14 +112,15 @@ class BaseAgent(ABC):
             self.run_context["agent_status"][self.agent_name] = "failed"
 
             # 에러 정보 생성
+            stack_trace = traceback.format_exc()
             error_info: ErrorInfo = {
                 "type": type(e).__name__,
-                "message": str(e),
+                "message": f"{type(e).__name__}: {e}",
                 "log_path": str(self.logger.get_log_path()),
             }
 
             # 에러 로그
-            self.logger.error(f"{self.agent_name} 실패: {e}")
+            self.logger.exception(f"{self.agent_name} 실패: {e}")
 
             # 표준 출력 생성 (실패)
             output = self._create_output(
@@ -131,7 +133,7 @@ class BaseAgent(ABC):
             self._save_output(output)
 
             # 작업 중단 함수 호출
-            self._handle_failure(str(e))
+            self._handle_failure(str(e), stack_trace)
 
             # 에러 전파
             raise
@@ -185,7 +187,7 @@ class BaseAgent(ABC):
 
         self.logger.debug(f"출력 저장: {output_file}")
 
-    def _handle_failure(self, error_message: str) -> None:
+    def _handle_failure(self, error_message: str, stack_trace: Optional[str] = None) -> None:
         """
         실패 처리 및 롤백
 
@@ -195,10 +197,16 @@ class BaseAgent(ABC):
         self.logger.error("작업 중단 함수 호출")
 
         # 롤백 및 정리
+        cleanup_hub = False
+        if self.config:
+            cleanup_hub = bool(self.config.get("pipeline.cleanup_hub_on_failure", False))
+
         rollback_and_cleanup(
             run_context=self.run_context,
             failed_agent=self.agent_name,
             error_message=error_message,
+            stack_trace=stack_trace,
+            cleanup_hub=cleanup_hub,
         )
 
     def _load_previous_output(self, agent_name: str) -> Dict[str, Any]:

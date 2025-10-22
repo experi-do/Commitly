@@ -2,7 +2,6 @@
 commit 명령어 구현
 """
 
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -25,27 +24,7 @@ def commit_command(args: Any) -> None:
         print("commitly init 명령어로 프로젝트를 초기화하세요.")
         return
 
-    # git commit 수행 (필요 시)
-    commit_message = getattr(args, "message", None)
-    if commit_message:
-        print(f"git commit 실행 중: {commit_message}")
-        try:
-            result = subprocess.run(
-                ["git", "commit", "-m", commit_message],
-                cwd=workspace_path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            if result.stdout.strip():
-                print(result.stdout.strip())
-        except subprocess.CalledProcessError as error:
-            print("❌ git commit 실행에 실패했습니다.")
-            if error.stdout and error.stdout.strip():
-                print(error.stdout.strip())
-            if error.stderr and error.stderr.strip():
-                print(error.stderr.strip())
-            return
+    user_message = getattr(args, "message", None)
 
     print("Commitly 파이프라인 시작...")
     print(f"워크스페이스: {workspace_path}")
@@ -54,7 +33,7 @@ def commit_command(args: Any) -> None:
 
     try:
         # 파이프라인 생성 및 실행
-        pipeline = CommitlyPipeline(workspace_path, config_path)
+        pipeline = CommitlyPipeline(workspace_path, config_path, user_message=user_message)
         final_state = pipeline.run()
 
         print("\n" + "=" * 60)

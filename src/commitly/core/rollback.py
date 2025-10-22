@@ -8,7 +8,7 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 from commitly.core.context import RunContext
 from commitly.core.git_manager import GitManager
@@ -82,6 +82,7 @@ def save_error_logs(
     run_context: RunContext,
     failed_agent: str,
     error_message: str,
+    stack_trace: Optional[str] = None,
 ) -> None:
     """
     에러 로그를 허브와 로컬 양쪽에 저장
@@ -102,6 +103,9 @@ def save_error_logs(
         "hub_branch": run_context.get(f"{failed_agent}_branch"),
         "rollback_branch": get_last_success_branch(run_context, failed_agent),
     }
+
+    if stack_trace:
+        error_data["stack_trace"] = stack_trace
 
     # 허브 로그 저장
     hub_log_dir = Path(run_context["hub_path"]) / "logs" / failed_agent
@@ -124,6 +128,7 @@ def rollback_and_cleanup(
     run_context: RunContext,
     failed_agent: str,
     error_message: str,
+    stack_trace: Optional[str] = None,
     cleanup_hub: bool = False,
 ) -> None:
     """
@@ -151,6 +156,10 @@ def rollback_and_cleanup(
         hub_path = Path(run_context["hub_path"])
         if hub_path.exists():
             git_manager = GitManager(hub_path, logger)
+            try:
+                git_manager.checkout(last_success_branch)
+            except Exception as checkout_error:
+                logger.warning(f"브랜치 체크아웃에 실패했습니다: {checkout_error}")
             git_manager.reset_hard(last_success_branch)
             logger.info(f"허브 복원 완료: {last_success_branch}")
 
@@ -159,7 +168,7 @@ def rollback_and_cleanup(
             logger.info("실패 브랜치 삭제 완료")
 
         # 4. 에러 로그 저장
-        save_error_logs(run_context, failed_agent, error_message)
+        save_error_logs(run_context, failed_agent, error_message, stack_trace)
         logger.info("에러 로그 저장 완료")
 
         # 5. 허브 리포지토리 삭제 (선택적)

@@ -5,6 +5,7 @@ RefactoringAgent 구현
 """
 
 import difflib
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -88,7 +89,7 @@ class RefactoringAgent(BaseAgent):
 
                 self.logger.info(f"✓ 리팩토링 완료: {file.name}")
 
-        # 4. 변경사항 커밋
+        # 4. 변경사항 커밋 (비용이 들어간 작업만)
         if refactored_files:
             self.hub_git.commit("Refactoring Agent: 코드 품질 개선")
             self.logger.info(f"리팩토링된 파일: {len(refactored_files)}개")
@@ -98,20 +99,19 @@ class RefactoringAgent(BaseAgent):
                 summary = detail.get("summary")
                 summary_info = f" ({summary})" if summary else ""
                 self.logger.info(f"- {detail['file_path']}: {actions}{summary_info}")
+
+            # 5. 리팩토링 적용 후 main 실행 검증
+            self._run_post_refactor_check()
         else:
             self.logger.info("리팩토링할 항목 없음")
 
-        # 5. 요약 생성
+        # 6. 요약 생성
         refactoring_summary = {
             "total_files_checked": len(changed_files),
             "refactored_files_count": len(refactored_files),
             "details": refactoring_details,
         }
 
-        # 5-1. 후속 실행 검증
-        self._run_post_refactor_check()
-
-        # 6. 결과 반환
         return {
             "refactored_files": refactored_files,
             "refactoring_summary": refactoring_summary,
@@ -175,6 +175,15 @@ class RefactoringAgent(BaseAgent):
                     sanitized_code = self._sanitize_llm_code(refactored_code)
                 else:
                     sanitized_code = None
+
+
+                if sanitized_code and sanitized_code != original_code:
+                    if not self._validate_llm_output(original_code, sanitized_code):
+                        self.logger.warning(
+                            "LLM 리팩토링 결과가 필수 import/정의를 누락하여 적용하지 않습니다."
+                        )
+                        self.logger.debug("LLM 제안 코드:\n%s", sanitized_code)
+                        sanitized_code = None
 
                 if sanitized_code and sanitized_code != original_code:
                     with open(file_path, "w", encoding="utf-8") as f:
@@ -320,6 +329,37 @@ class RefactoringAgent(BaseAgent):
                 summary_parts.append(f"예: {shortened}")
 
         return ", ".join(summary_parts)
+
+    def _validate_llm_output(self, original: str, updated: str) -> bool:
+        """LLM이 반환한 코드가 필수 import와 클래스 정의를 유지하는지 확인."""
+
+        required_imports = self._extract_import_lines(original)
+        for imp in required_imports:
+            if imp not in updated:
+                self.logger.debug(f"LLM 출력에 import 누락: {imp}")
+                return False
+
+        original_classes = self._extract_class_names(original)
+        for cls in original_classes:
+            pattern = rf"class\s+{re.escape(cls)}\b"
+            if not re.search(pattern, updated):
+                self.logger.debug(f"LLM 출력에 클래스 정의 누락: {cls}")
+                return False
+
+        return True
+
+    def _extract_import_lines(self, code: str) -> List[str]:
+        imports: List[str] = []
+        for line in code.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                break
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                imports.append(stripped)
+        return imports
+
+    def _extract_class_names(self, code: str) -> List[str]:
+        return re.findall(r"class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", code)
 
     def _run_post_refactor_check(self) -> None:
         """

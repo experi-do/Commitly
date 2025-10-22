@@ -337,6 +337,10 @@ execution:
 test:
   timeout: 300
 
+# 파이프라인 설정
+pipeline:
+  cleanup_hub_on_failure: false
+
 # 데이터베이스 설정 (SQL 최적화용)
 database:
   host: localhost
