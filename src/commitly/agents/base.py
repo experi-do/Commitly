@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from commitly.core.config import Config
 from commitly.core.context import AgentOutput, ErrorInfo, RunContext
 from commitly.core.logger import CommitlyLogger, get_logger
 from commitly.core.rollback import rollback_and_cleanup
@@ -37,6 +38,12 @@ class BaseAgent(ABC):
         # 로거 초기화
         workspace_path = Path(run_context["workspace_path"])
         self.logger = get_logger(self.agent_name, workspace_path)
+
+        # 설정 로드
+        config_path = run_context.get("config_path")
+        if not config_path:
+            raise RuntimeError("RunContext에 config_path가 없습니다. commitly init을 먼저 실행하세요.")
+        self.config = Config(Path(config_path))
 
         # 시작 시간 기록
         self.started_at = datetime.now()

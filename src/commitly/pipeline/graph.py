@@ -86,6 +86,7 @@ class CommitlyPipeline:
             "project_name": project_name,
             "workspace_path": str(self.workspace_path),
             "hub_path": "",  # Clone Agent에서 설정
+            "config_path": str(self.config.config_path),
             "git_remote": git_remote,
             "current_branch": current_branch,
             "latest_local_commits": latest_commits,
