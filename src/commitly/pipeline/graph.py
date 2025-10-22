@@ -4,10 +4,12 @@ LangGraph 파이프라인 구현
 모든 에이전트를 오케스트레이션
 """
 
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import urlparse
 
 from langgraph.graph import StateGraph, END
 
@@ -40,6 +42,7 @@ class CommitlyPipeline:
             config_path: 설정 파일 경로
         """
         self.workspace_path = workspace_path
+        self.env_file_path = self._load_env_file(self.workspace_path)
         self.config = Config(config_path)
 
         # 로거 초기화
@@ -99,6 +102,7 @@ class CommitlyPipeline:
             "has_query": False,
             "query_file_list": None,
             "llm_client": self.llm_client,
+            "env_file": str(self.env_file_path) if self.env_file_path else "",
             "execution_profile": self.config.get("execution", {}),
             "test_profile": self.config.get("test", {}),
         }
@@ -131,6 +135,90 @@ class CommitlyPipeline:
         except Exception as e:
             self.logger.warning(f"로컬 커밋 조회 실패: {e}")
             return []
+
+    def _load_env_file(self, workspace_path: Path) -> Path | None:
+        """
+        워크스페이스의 .env 파일을 로드하여 환경 변수에 주입
+        """
+        env_path = workspace_path / ".env"
+        if not env_path.exists():
+            return None
+
+        try:
+            env_data = self._parse_env_file(env_path)
+
+            for key, value in env_data.items():
+                if key not in os.environ:
+                    os.environ[key] = value
+
+            self._populate_db_env_defaults(env_data)
+            return env_path
+
+        except Exception as exc:
+            self.logger.warning(f".env 파일 로드 실패: {exc}")
+            return None
+
+    def _parse_env_file(self, env_path: Path) -> Dict[str, str]:
+        """
+        .env 파일을 파싱하여 키-값 딕셔너리로 반환
+        """
+        env_data: Dict[str, str] = {}
+
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            if line.lower().startswith("export "):
+                line = line[7:].strip()
+
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+
+            if not key:
+                continue
+
+            if value and len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+
+            env_data[key] = value
+
+        return env_data
+
+    def _populate_db_env_defaults(self, env_data: Dict[str, str]) -> None:
+        """
+        DATABASE_URL을 기반으로 DB 관련 환경 변수를 보완
+        """
+        db_url = env_data.get("DATABASE_URL") or os.environ.get("DATABASE_URL")
+        if not db_url:
+            return
+
+        parsed = urlparse(db_url)
+        if parsed.scheme not in {"postgresql", "postgres"}:
+            return
+
+        if parsed.username and not os.environ.get("DB_USER"):
+            os.environ["DB_USER"] = parsed.username
+
+        if parsed.password is not None:
+            if not os.environ.get("DB_PASSWORD"):
+                os.environ["DB_PASSWORD"] = parsed.password
+        else:
+            os.environ.setdefault("DB_PASSWORD", "")
+
+        if parsed.hostname and not os.environ.get("DB_HOST"):
+            os.environ["DB_HOST"] = parsed.hostname
+
+        if parsed.port and not os.environ.get("DB_PORT"):
+            os.environ["DB_PORT"] = str(parsed.port)
+
+        db_name = parsed.path.lstrip("/")
+        if db_name and not os.environ.get("DB_NAME"):
+            os.environ["DB_NAME"] = db_name
 
     def build_graph(self) -> StateGraph:
         """
