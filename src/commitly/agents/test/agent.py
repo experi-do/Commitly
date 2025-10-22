@@ -246,10 +246,13 @@ class TestAgent(BaseAgent):
         """
         self.logger.info("테스트 실행 시작")
 
-        # 테스트 프로필 가져오기
         test_profile = self.run_context.get("test_profile", {})
-        test_command = test_profile.get("command", "pytest")
+        test_command = test_profile.get("command")
         timeout = test_profile.get("timeout", 300)
+
+        if not test_command:
+            execution_profile = self.run_context.get("execution_profile", {})
+            test_command = execution_profile.get("command", "python main.py")
 
         try:
             result = subprocess.run(
