@@ -67,6 +67,9 @@ def commit_command(args: Any) -> None:
             if sync_data.get("pushed"):
                 print("\n✓ 원격 저장소에 push되었습니다.")
                 print(f"  Commit SHA: {sync_data.get('commit_sha', 'N/A')}")
+                remote_branch = sync_data.get("remote_branch")
+                if remote_branch:
+                    print(f"  Remote Branch: {remote_branch}")
 
         if "slack_output" in final_state:
             slack_data = final_state["slack_output"].get("data", {})

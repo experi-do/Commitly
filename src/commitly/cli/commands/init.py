@@ -128,6 +128,7 @@ def _update_gitignore(workspace_path: Path) -> None:
         ".commitly/logs/",
         ".commitly_hub_*/",
         ".env",
+        "commitly_exec.sh",
     ]
 
     # 기존 .gitignore 읽기

@@ -56,9 +56,12 @@ class SyncAgent(BaseAgent):
         """
         # 1. 변경사항 요약 생성
         summary = self._generate_change_summary()
+        sync_started_at = datetime.now()
+        target_branch = self._build_remote_branch_name(sync_started_at)
+        self.run_context["sync_agent_branch"] = target_branch
 
         # 2. 사용자 승인 요청
-        user_approved = self._request_user_approval(summary)
+        user_approved = self._request_user_approval(summary, target_branch)
 
         # 결과 초기화
         result = {
@@ -66,8 +69,8 @@ class SyncAgent(BaseAgent):
             "pushed": False,
             "commit_sha": "",
             "commit_message": "",
-            "remote_branch": self.run_context["current_branch"],
-            "sync_time": datetime.now().isoformat(),
+            "remote_branch": target_branch,
+            "sync_time": sync_started_at.isoformat(),
             "branches_deleted": [],
         }
 
@@ -79,7 +82,7 @@ class SyncAgent(BaseAgent):
             self._apply_hub_to_local()
 
             # 원격 push
-            commit_sha = self._push_to_remote()
+            commit_sha = self._push_to_remote(target_branch)
 
             # 브랜치 정리
             deleted_branches = self._cleanup_hub_branches()
@@ -95,10 +98,13 @@ class SyncAgent(BaseAgent):
         else:
             # 4. 거부 시 동작
             self.logger.info("사용자가 push를 거부했습니다. 허브 상태 유지")
-            self.logger.info("수동 push: cd {workspace} && git push origin {branch}".format(
-                workspace=self.workspace_path,
-                branch=self.run_context["current_branch"],
-            ))
+            self.logger.info(
+                "수동 push: cd {workspace} && git push {remote} HEAD:{branch}".format(
+                    workspace=self.workspace_path,
+                    remote=self.run_context["git_remote"],
+                    branch=target_branch,
+                )
+            )
 
         # 5. 결과 반환
         return result
@@ -230,12 +236,13 @@ class SyncAgent(BaseAgent):
 
         return results
 
-    def _request_user_approval(self, summary: Dict[str, Any]) -> bool:
+    def _request_user_approval(self, summary: Dict[str, Any], target_branch: str) -> bool:
         """
         사용자 승인 요청
 
         Args:
             summary: 변경사항 요약
+            target_branch: push 대상 브랜치 이름
 
         Returns:
             승인 여부
@@ -269,8 +276,10 @@ class SyncAgent(BaseAgent):
         print("\n" + "=" * 60)
 
         # 승인 요청
-        remote_branch = f"{self.run_context['git_remote']}/{self.run_context['current_branch']}"
-        response = input(f"\n원격 저장소({remote_branch})에 push할까요? (y/n): ").strip().lower()
+        remote_branch = f"{self.run_context['git_remote']}/{target_branch}"
+        response = input(
+            f"\n원격 저장소에 새 브랜치({remote_branch})로 push할까요? (y/n): "
+        ).strip().lower()
 
         approved = response == "y"
 
@@ -322,7 +331,7 @@ class SyncAgent(BaseAgent):
 
         self.logger.info("✓ 로컬 반영 완료")
 
-    def _push_to_remote(self) -> str:
+    def _push_to_remote(self, branch: str) -> str:
         """
         원격 저장소에 push
 
@@ -332,7 +341,6 @@ class SyncAgent(BaseAgent):
         self.logger.info("원격 저장소에 push 중...")
 
         remote = self.run_context["git_remote"]
-        branch = self.run_context["current_branch"]
 
         max_retries = 3
 
@@ -340,7 +348,7 @@ class SyncAgent(BaseAgent):
             try:
                 # Git push
                 result = subprocess.run(
-                    ["git", "push", remote, branch],
+                    ["git", "push", remote, f"HEAD:{branch}"],
                     cwd=self.workspace_path,
                     capture_output=True,
                     text=True,
@@ -351,9 +359,9 @@ class SyncAgent(BaseAgent):
                     # 현재 커밋 SHA 가져오기
                     commit_sha = self.workspace_git.repo.head.commit.hexsha
 
-                    self.logger.info(f"✓ Push 성공: {commit_sha}")
+                    self.logger.info(f"✓ Push 성공: {remote}/{branch} ({commit_sha})")
                     self.logger.log_command(
-                        f"git push {remote} {branch}",
+                        f"git push {remote} HEAD:{branch}",
                         result.stdout,
                         result.returncode,
                     )
@@ -399,3 +407,20 @@ class SyncAgent(BaseAgent):
             self.logger.warning(f"브랜치 정리 실패: {e}")
             # 치명적 오류 아님, 계속 진행
             return []
+
+    def _build_remote_branch_name(self, sync_time: datetime) -> str:
+        """
+        원격으로 push할 새 브랜치 이름 생성
+
+        Args:
+            sync_time: 동기화 시작 시각
+
+        Returns:
+            새 원격 브랜치 이름
+        """
+        base_branch = self.run_context["current_branch"]
+        pipeline_id = self.run_context.get("pipeline_id", "")
+        short_pipeline_id = pipeline_id.split("-")[0] if pipeline_id else "pipeline"
+        timestamp = sync_time.strftime("%Y%m%d%H%M%S")
+
+        return f"commitly/sync/{base_branch}-{timestamp}-{short_pipeline_id}"
