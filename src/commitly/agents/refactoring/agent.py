@@ -90,6 +90,10 @@ class RefactoringAgent(BaseAgent):
         if refactored_files:
             self.hub_git.commit("Refactoring Agent: 코드 품질 개선")
             self.logger.info(f"리팩토링된 파일: {len(refactored_files)}개")
+            self.logger.info("리팩토링 요약:")
+            for detail in refactoring_details:
+                actions = ", ".join(detail["refactorings"]) or "변경 사항 기록 없음"
+                self.logger.info(f"- {detail['file_path']}: {actions}")
         else:
             self.logger.info("리팩토링할 항목 없음")
 
@@ -227,8 +231,12 @@ class RefactoringAgent(BaseAgent):
             테스트 통과 여부
         """
         test_profile = self.run_context.get("test_profile", {})
-        test_command = test_profile.get("command", "pytest")
+        test_command = test_profile.get("command")
         timeout = test_profile.get("timeout", 300)
+
+        if not test_command:
+            execution_profile = self.run_context.get("execution_profile", {})
+            test_command = execution_profile.get("command", "python main.py")
 
         try:
             result = subprocess.run(
@@ -244,6 +252,14 @@ class RefactoringAgent(BaseAgent):
             if not passed:
                 self.logger.warning("테스트 실패")
                 self.logger.debug(result.stdout + result.stderr)
+            else:
+                self.logger.debug(result.stdout + result.stderr)
+
+            self.logger.log_command(
+                test_command,
+                result.stdout + result.stderr,
+                result.returncode,
+            )
 
             return passed
 
