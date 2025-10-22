@@ -227,6 +227,11 @@ class CloneAgent(BaseAgent):
             for f in changed_files
         ]
 
+        script_relative = "commitly_exec.sh"
+        script_path = workspace_path / script_relative
+        if script_path.exists() and script_relative not in relative_files:
+            relative_files.append(script_relative)
+
         # 파일 복사
         copy_local_changes_to_hub(
             workspace_repo,

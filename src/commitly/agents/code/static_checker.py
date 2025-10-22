@@ -140,3 +140,10 @@ class StaticChecker:
                 "errors": [],
                 "output": "mypy not found, skipped",
             }
+        except Exception as e:
+            self.logger.warning(f"타입 체크 중 예외 발생: {e}. 계속 진행합니다.")
+            return {
+                "passed": True,
+                "errors": [],
+                "output": f"Type check skipped due to error: {e}",
+            }

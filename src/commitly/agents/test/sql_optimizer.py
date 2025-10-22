@@ -153,7 +153,11 @@ class SQLOptimizer:
 
         for query in candidates:
             explain_result = self.explain_query(query)
-            cost = explain_result["total_cost"]
+            cost = explain_result.get("total_cost")
+
+            if cost is None:
+                self.logger.debug("쿼리 비용 정보를 가져올 수 없어 후보에서 제외합니다")
+                continue
 
             self.logger.debug(f"쿼리 비용: {cost}")
 

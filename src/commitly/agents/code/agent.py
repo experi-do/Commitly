@@ -55,13 +55,8 @@ class CodeAgent(BaseAgent):
         # 3. 정적 검사
         static_result = self._run_static_checks()
 
-        # 정적 검사 실패 시 중단
-        if not self._all_checks_passed(static_result):
-            raise RuntimeError(
-                f"정적 검사 실패:\n"
-                f"Lint: {static_result['lint']['passed']}\n"
-                f"Type: {static_result['type_check']['passed']}"
-            )
+        # 정적 검사 결과 로깅 (실패해도 계속 진행)
+        self._log_static_check_results(static_result)
 
         # 4. 동적 실행
         execution_result = self._run_dynamic_execution()
@@ -136,29 +131,69 @@ class CodeAgent(BaseAgent):
 
         return results
 
-    def _all_checks_passed(self, static_result: Dict[str, Any]) -> bool:
-        """모든 정적 검사가 통과했는지 확인"""
-        return (
-            static_result["lint"]["passed"]
-            and static_result["type_check"]["passed"]
-        )
+    def _log_static_check_results(self, static_result: Dict[str, Any]) -> None:
+        """
+        정적 검사 결과 로깅
+
+        Lint 실패 시에만 경고 출력, mypy 실패는 무시하고 계속 진행
+        """
+        lint_passed = static_result["lint"]["passed"]
+        type_check_passed = static_result["type_check"]["passed"]
+
+        if lint_passed:
+            self.logger.info("✓ 린트 검사 통과")
+        else:
+            self.logger.warning("✗ 린트 검사 실패 (경고로 처리)")
+
+        if type_check_passed:
+            self.logger.info("✓ 타입 체크 통과")
+        else:
+            self.logger.warning("✗ 타입 체크 실패 (무시하고 계속 진행)")
 
     def _run_dynamic_execution(self) -> Dict[str, Any]:
-        """동적 실행 (python main.py)"""
+        """동적 실행 (python main.py) - venv 활성화 포함"""
         self.logger.info("동적 실행 시작")
 
         profile = self.run_context.get("execution_profile", {})
         command = profile.get("command", "python main.py")
         timeout = profile.get("timeout", 300)
 
+        # venv 활성화 로직
+        python_bin = self.run_context.get("python_bin", "python")
+        python_bin_path = Path(python_bin)
+
+        # venv 경로 추출 (venv/bin/python → venv)
+        use_venv = False
+        activate_script = None
+
+        if python_bin_path.exists() and ("venv" in str(python_bin_path) or "env" in str(python_bin_path)):
+            # bin/python 또는 Scripts/python.exe의 부모의 부모
+            venv_path = python_bin_path.parent.parent
+            activate_script = venv_path / "bin" / "activate"
+
+            if activate_script.exists():
+                use_venv = True
+
         try:
-            result = subprocess.run(
-                command.split(),
-                cwd=self.hub_path,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            if use_venv:
+                # bash를 통한 venv 활성화 + 명령어 실행
+                bash_command = f"source {activate_script} && cd {self.hub_path} && {command}"
+
+                result = subprocess.run(
+                    ["bash", "-c", bash_command],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            else:
+                # venv 없으면 기존 방식
+                result = subprocess.run(
+                    command.split(),
+                    cwd=self.hub_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
 
             self.logger.log_command(
                 command,

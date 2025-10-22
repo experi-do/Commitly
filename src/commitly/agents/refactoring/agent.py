@@ -4,9 +4,12 @@ RefactoringAgent 구현
 코드 품질 개선 및 리팩토링
 """
 
+import difflib
+import re
+import shlex
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from commitly.agents.base import BaseAgent
 from commitly.core.context import RunContext
@@ -86,21 +89,29 @@ class RefactoringAgent(BaseAgent):
 
                 self.logger.info(f"✓ 리팩토링 완료: {file.name}")
 
-        # 4. 변경사항 커밋
+        # 4. 변경사항 커밋 (비용이 들어간 작업만)
         if refactored_files:
             self.hub_git.commit("Refactoring Agent: 코드 품질 개선")
             self.logger.info(f"리팩토링된 파일: {len(refactored_files)}개")
+            self.logger.info("리팩토링 요약:")
+            for detail in refactoring_details:
+                actions = ", ".join(detail["refactorings"]) or "변경 사항 기록 없음"
+                summary = detail.get("summary")
+                summary_info = f" ({summary})" if summary else ""
+                self.logger.info(f"- {detail['file_path']}: {actions}{summary_info}")
+
+            # 5. 리팩토링 적용 후 main 실행 검증
+            self._run_post_refactor_check()
         else:
             self.logger.info("리팩토링할 항목 없음")
 
-        # 5. 요약 생성
+        # 6. 요약 생성
         refactoring_summary = {
             "total_files_checked": len(changed_files),
             "refactored_files_count": len(refactored_files),
             "details": refactoring_details,
         }
 
-        # 6. 결과 반환
         return {
             "refactored_files": refactored_files,
             "refactoring_summary": refactoring_summary,
@@ -136,6 +147,7 @@ class RefactoringAgent(BaseAgent):
             }
         """
         refactorings = []
+        summary = None
 
         # 1. LLM 기반 리팩토링 (선택적)
         llm_client = self.run_context.get("llm_client")
@@ -159,22 +171,42 @@ class RefactoringAgent(BaseAgent):
                     refactoring_rules,
                 )
 
-                # 변경사항이 있으면 파일 쓰기
-                if refactored_code and refactored_code != original_code:
+                if refactored_code:
+                    sanitized_code = self._sanitize_llm_code(refactored_code)
+                else:
+                    sanitized_code = None
+
+
+                if sanitized_code and sanitized_code != original_code:
+                    if not self._validate_llm_output(original_code, sanitized_code):
+                        self.logger.warning(
+                            "LLM 리팩토링 결과가 필수 import/정의를 누락하여 적용하지 않습니다."
+                        )
+                        self.logger.debug("LLM 제안 코드:\n%s", sanitized_code)
+                        sanitized_code = None
+
+                if sanitized_code and sanitized_code != original_code:
                     with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(refactored_code)
+                        f.write(sanitized_code)
 
                     refactorings.append("LLM refactoring")
                     self.logger.debug("LLM 리팩토링 적용")
 
+                    summary = self._summarize_changes(original_code, sanitized_code)
+                else:
+                    summary = None
+
             except Exception as e:
                 self.logger.warning(f"LLM 리팩토링 실패: {e}")
+                summary = None
 
         # 2. ruff --fix (자동 수정)
         ruff_result = self._run_ruff_fix(file_path)
 
         if ruff_result:
             refactorings.append("ruff --fix")
+            if not summary:
+                summary = "자동 포맷 적용됨"
 
         # 변경 여부
         changed = len(refactorings) > 0
@@ -183,8 +215,192 @@ class RefactoringAgent(BaseAgent):
             "file_path": file_path,
             "changed": changed,
             "refactorings": refactorings,
+            "summary": summary or "",
         }
 
+    def _sanitize_llm_code(self, generated_code: Optional[str]) -> str:
+        """
+        LLM이 반환한 코드에서 마크다운 문법 등을 제거
+
+        Args:
+            generated_code: LLM이 제안한 코드 문자열
+
+        Returns:
+            코드 블록 래핑이 제거된 문자열
+        """
+        if not generated_code:
+            return ""
+
+        stripped = generated_code.strip()
+        lines = stripped.splitlines()
+
+        # 코드 블록 마커 제거
+        while lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        while lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+
+        # 요약/설명 섹션 제거
+        cutoff_index: Optional[int] = None
+        summary_keywords = (
+            "improvement",
+            "improvements",
+            "summary",
+            "change",
+            "changes",
+            "notes",
+            "conclusion",
+            "explanation",
+        )
+
+        bullet_keywords = (
+            "duplicate",
+            "exception",
+            "refactor",
+            "clean",
+            "improve",
+            "변경",
+            "개선",
+        )
+
+        for index, line in enumerate(lines):
+            line_stripped = line.strip().lower()
+            if not line_stripped:
+                continue
+
+            if line_stripped.startswith(("###", "##", "**")) and any(
+                keyword in line_stripped for keyword in summary_keywords
+            ):
+                cutoff_index = index
+                break
+
+            # 문장형 설명이 나오는 경우 감지
+            if (
+                any(keyword in line_stripped for keyword in summary_keywords)
+                and not line_stripped.startswith("#")
+                and not line_stripped.startswith("//")
+                and not line_stripped.startswith("/*")
+            ):
+                # 코드 주석(#)이 아닌 일반 문장으로 판단
+                cutoff_index = index
+                break
+
+            if line_stripped.startswith(("- ", "* ")) and any(
+                keyword in line_stripped for keyword in bullet_keywords
+            ):
+                cutoff_index = index
+                break
+
+        if cutoff_index is not None:
+            lines = lines[:cutoff_index]
+
+        return "\n".join(lines).rstrip()
+
+    def _summarize_changes(self, original: str, updated: str) -> str:
+        """
+        리팩토링 전후 코드를 비교하여 간단한 요약을 생성
+
+        Args:
+            original: 원본 코드
+            updated: 리팩토링된 코드
+
+        Returns:
+            추가/삭제 라인 수와 대표 변경 라인을 포함한 요약 문자열
+        """
+        diff = list(difflib.ndiff(original.splitlines(), updated.splitlines()))
+
+        additions = [line[2:] for line in diff if line.startswith("+ ")]
+        deletions = [line[2:] for line in diff if line.startswith("- ")]
+
+        summary_parts = []
+        if additions:
+            summary_parts.append(f"{len(additions)} line(s) added")
+        if deletions:
+            summary_parts.append(f"{len(deletions)} line(s) removed")
+
+        if not summary_parts:
+            summary_parts.append("구조적 변경 적용")
+
+        preview_lines = additions[:2] if additions else deletions[:2]
+        if preview_lines:
+            preview = "; ".join(line.strip() for line in preview_lines if line.strip())
+            if preview:
+                shortened = (preview[:117] + "...") if len(preview) > 120 else preview
+                summary_parts.append(f"예: {shortened}")
+
+        return ", ".join(summary_parts)
+
+    def _validate_llm_output(self, original: str, updated: str) -> bool:
+        """LLM이 반환한 코드가 필수 import와 클래스 정의를 유지하는지 확인."""
+
+        required_imports = self._extract_import_lines(original)
+        for imp in required_imports:
+            if imp not in updated:
+                self.logger.debug(f"LLM 출력에 import 누락: {imp}")
+                return False
+
+        original_classes = self._extract_class_names(original)
+        for cls in original_classes:
+            pattern = rf"class\s+{re.escape(cls)}\b"
+            if not re.search(pattern, updated):
+                self.logger.debug(f"LLM 출력에 클래스 정의 누락: {cls}")
+                return False
+
+        return True
+
+    def _extract_import_lines(self, code: str) -> List[str]:
+        imports: List[str] = []
+        for line in code.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                break
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                imports.append(stripped)
+        return imports
+
+    def _extract_class_names(self, code: str) -> List[str]:
+        return re.findall(r"class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", code)
+
+    def _run_post_refactor_check(self) -> None:
+        """
+        리팩토링 이후 메인 실행 커맨드로 최종 검증을 수행합니다.
+        """
+        profile = self.run_context.get("execution_profile", {})
+        command = profile.get("command")
+        timeout = profile.get("timeout", 300)
+
+        if not command:
+            self.logger.info("실행 커맨드가 없어 리팩토링 이후 검증을 스킵합니다.")
+            return
+
+        self.logger.info(f"리팩토링 후 검증 실행: {command}")
+
+        try:
+            result = subprocess.run(
+                shlex.split(command),
+                cwd=self.hub_path,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+
+            self.logger.log_command(
+                command,
+                result.stdout + result.stderr,
+                result.returncode,
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "리팩토링 후 검증 실행 실패:\n"
+                    f"{result.stdout}{result.stderr}"
+                )
+
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"리팩토링 후 검증 실행이 {timeout}초 안에 종료되지 않았습니다.")
+
+        except FileNotFoundError:
+            self.logger.warning(f"실행 커맨드를 찾을 수 없어 검증을 건너뜁니다: {command}")
     def _run_ruff_fix(self, file_path: str) -> bool:
         """
         ruff --fix 실행
@@ -227,8 +443,12 @@ class RefactoringAgent(BaseAgent):
             테스트 통과 여부
         """
         test_profile = self.run_context.get("test_profile", {})
-        test_command = test_profile.get("command", "pytest")
+        test_command = test_profile.get("command")
         timeout = test_profile.get("timeout", 300)
+
+        if not test_command:
+            execution_profile = self.run_context.get("execution_profile", {})
+            test_command = execution_profile.get("command", "python main.py")
 
         try:
             result = subprocess.run(
@@ -244,6 +464,14 @@ class RefactoringAgent(BaseAgent):
             if not passed:
                 self.logger.warning("테스트 실패")
                 self.logger.debug(result.stdout + result.stderr)
+            else:
+                self.logger.debug(result.stdout + result.stderr)
+
+            self.logger.log_command(
+                test_command,
+                result.stdout + result.stderr,
+                result.returncode,
+            )
 
             return passed
 

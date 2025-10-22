@@ -43,6 +43,7 @@ class RunContext(TypedDict):
     project_name: str
     workspace_path: str              # 로컬 프로젝트 루트
     hub_path: str                    # 허브 복제본 루트
+    config_path: str                 # 설정 파일 경로
 
     # Git 정보
     git_remote: str                  # 기본 'origin'

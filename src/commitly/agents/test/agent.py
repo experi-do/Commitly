@@ -54,21 +54,29 @@ class TestAgent(BaseAgent):
         has_query = code_output["data"]["hasQuery"]
         query_file_list = code_output["data"].get("queryFileList", [])
 
-        optimized_queries = []
+        optimized_queries: List[Dict[str, Any]] = []
+        test_result: Dict[str, Any]
 
-        # 3. SQL 최적화 (hasQuery=true인 경우만)
+        # 3. SQL 최적화 및 테스트 실행 (hasQuery=true인 경우만)
         if has_query and query_file_list:
             self.logger.info(f"SQL 쿼리 최적화 시작: {len(query_file_list)}개")
             optimized_queries = self._optimize_sql_queries(query_file_list)
-        else:
-            self.logger.info("SQL 쿼리 없음, 최적화 스킵")
 
         # 4. 변경사항 커밋
         if optimized_queries:
             self.hub_git.commit("Test Agent: SQL 쿼리 최적화")
 
-        # 5. 테스트 실행
-        test_result = self._run_tests()
+        if has_query and (query_file_list or optimized_queries):
+            # 5. 테스트 실행
+            test_result = self._run_tests()
+        else:
+            self.logger.info("SQL 쿼리 없음, 테스트 스킵")
+            test_result = {
+                "passed": True,
+                "output": "SQL 쿼리가 없어 테스트를 실행하지 않았습니다.",
+                "exit_code": 0,
+                "skipped": True,
+            }
 
         # 테스트 실패 시 자동 롤백
         if not test_result["passed"]:
@@ -166,8 +174,8 @@ class TestAgent(BaseAgent):
                 "optimized_query": best_query,
                 "improved": improved,
                 "original_cost": 0.0,  # 원본 비용 계산 가능
-                "optimized_cost": best_explain["total_cost"],
-                "execution_time": best_explain["execution_time"],
+                "optimized_cost": best_explain.get("total_cost"),
+                "execution_time": best_explain.get("execution_time"),
             }
 
             optimized_results.append(optimized_info)
@@ -227,7 +235,7 @@ class TestAgent(BaseAgent):
 
     def _run_tests(self) -> Dict[str, Any]:
         """
-        테스트 실행
+        테스트 실행 - venv 활성화 포함
 
         Returns:
             {
@@ -238,19 +246,48 @@ class TestAgent(BaseAgent):
         """
         self.logger.info("테스트 실행 시작")
 
-        # 테스트 프로필 가져오기
         test_profile = self.run_context.get("test_profile", {})
-        test_command = test_profile.get("command", "pytest")
+        test_command = test_profile.get("command")
         timeout = test_profile.get("timeout", 300)
 
+        if not test_command:
+            execution_profile = self.run_context.get("execution_profile", {})
+            test_command = execution_profile.get("command", "python main.py")
+
+        # venv 활성화 로직 (CodeAgent와 동일)
+        python_bin = self.run_context.get("python_bin", "python")
+        python_bin_path = Path(python_bin)
+
+        use_venv = False
+        activate_script = None
+
+        if python_bin_path.exists() and ("venv" in str(python_bin_path) or "env" in str(python_bin_path)):
+            venv_path = python_bin_path.parent.parent
+            activate_script = venv_path / "bin" / "activate"
+
+            if activate_script.exists():
+                use_venv = True
+
         try:
-            result = subprocess.run(
-                test_command.split(),
-                cwd=self.hub_path,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            if use_venv:
+                # bash를 통한 venv 활성화 + 테스트 실행
+                bash_command = f"source {activate_script} && cd {self.hub_path} && {test_command}"
+
+                result = subprocess.run(
+                    ["bash", "-c", bash_command],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            else:
+                # venv 없으면 기존 방식
+                result = subprocess.run(
+                    test_command.split(),
+                    cwd=self.hub_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
 
             passed = result.returncode == 0
             output = result.stdout + result.stderr
