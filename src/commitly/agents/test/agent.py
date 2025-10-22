@@ -235,7 +235,7 @@ class TestAgent(BaseAgent):
 
     def _run_tests(self) -> Dict[str, Any]:
         """
-        테스트 실행
+        테스트 실행 - venv 활성화 포함
 
         Returns:
             {
@@ -254,14 +254,40 @@ class TestAgent(BaseAgent):
             execution_profile = self.run_context.get("execution_profile", {})
             test_command = execution_profile.get("command", "python main.py")
 
+        # venv 활성화 로직 (CodeAgent와 동일)
+        python_bin = self.run_context.get("python_bin", "python")
+        python_bin_path = Path(python_bin)
+
+        use_venv = False
+        activate_script = None
+
+        if python_bin_path.exists() and ("venv" in str(python_bin_path) or "env" in str(python_bin_path)):
+            venv_path = python_bin_path.parent.parent
+            activate_script = venv_path / "bin" / "activate"
+
+            if activate_script.exists():
+                use_venv = True
+
         try:
-            result = subprocess.run(
-                test_command.split(),
-                cwd=self.hub_path,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+            if use_venv:
+                # bash를 통한 venv 활성화 + 테스트 실행
+                bash_command = f"source {activate_script} && cd {self.hub_path} && {test_command}"
+
+                result = subprocess.run(
+                    ["bash", "-c", bash_command],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
+            else:
+                # venv 없으면 기존 방식
+                result = subprocess.run(
+                    test_command.split(),
+                    cwd=self.hub_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
 
             passed = result.returncode == 0
             output = result.stdout + result.stderr

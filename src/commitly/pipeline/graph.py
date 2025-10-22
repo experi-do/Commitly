@@ -87,6 +87,9 @@ class CommitlyPipeline:
         # 최근 로컬 커밋 가져오기
         latest_commits = self._get_latest_local_commits()
 
+        # python_bin 감지
+        python_bin = self._detect_python_bin()
+
         return {
             "pipeline_id": pipeline_id,
             "project_name": project_name,
@@ -105,10 +108,41 @@ class CommitlyPipeline:
             "has_query": False,
             "query_file_list": None,
             "llm_client": self.llm_client,
+            "python_bin": python_bin,
             "env_file": str(self.env_file_path) if self.env_file_path else "",
             "execution_profile": self.config.get("execution", {}),
             "test_profile": self.config.get("test", {}),
         }
+
+    def _detect_python_bin(self) -> str:
+        """
+        Python 바이너리 경로 감지 (3단계 우선순위)
+
+        Returns:
+            python 바이너리 경로
+        """
+        # 우선순위 1: config.yaml의 execution.python_bin
+        python_bin = self.config.get("execution.python_bin")
+        if python_bin and Path(python_bin).exists():
+            return python_bin
+
+        # 우선순위 2: COMMITLY_VENV 환경 변수
+        env_venv = os.getenv("COMMITLY_VENV")
+        if env_venv:
+            venv_path = Path(env_venv)
+
+            # Unix/Linux/macOS
+            bin_path = venv_path / "bin" / "python"
+            if bin_path.exists():
+                return str(bin_path)
+
+            # Windows
+            bin_path = venv_path / "Scripts" / "python.exe"
+            if bin_path.exists():
+                return str(bin_path)
+
+        # 우선순위 3: 기본값
+        return "python"
 
     def _get_latest_local_commits(self) -> list:
         """

@@ -311,18 +311,18 @@ class SyncAgent(BaseAgent):
         changed_files = clone_output["data"]["changed_files"]
 
         # 파일 복사 (허브 → 로컬)
-        for hub_file_path in changed_files:
-            hub_file = Path(hub_file_path)
+        for local_file_path in changed_files:
+            local_file = Path(local_file_path)
 
-            # 상대 경로 계산
+            # 상대 경로 계산 (로컬 기준)
             try:
-                rel_path = hub_file.relative_to(self.hub_path)
+                rel_path = local_file.relative_to(self.workspace_path)
             except ValueError:
                 # 이미 상대 경로인 경우
-                rel_path = Path(hub_file_path)
+                rel_path = Path(local_file_path)
 
-            # 로컬 파일 경로
-            local_file = self.workspace_path / rel_path
+            # 허브에서의 파일 경로
+            hub_file = self.hub_path / rel_path
 
             # 파일 복사
             try:
@@ -333,8 +333,12 @@ class SyncAgent(BaseAgent):
                 if hub_file.exists():
                     import shutil
 
-                    shutil.copy2(hub_file, local_file)
-                    self.logger.debug(f"복사: {rel_path}")
+                    # 같은 파일인지 확인
+                    if hub_file.resolve() != local_file.resolve():
+                        shutil.copy2(hub_file, local_file)
+                        self.logger.debug(f"복사: {rel_path}")
+                    else:
+                        self.logger.debug(f"이미 최신: {rel_path}")
 
             except Exception as e:
                 self.logger.warning(f"파일 복사 실패: {rel_path} - {e}")
@@ -402,7 +406,7 @@ class SyncAgent(BaseAgent):
         """사용자 지정 메시지를 허브에 빈 커밋으로 기록"""
         try:
             self.hub_git.repo.git.commit("--allow-empty", "-m", message)
-            self.logger.info("사용자 지정 커밋 메시지 적용: %s", message)
+            self.logger.info(f"사용자 지정 커밋 메시지 적용: {message}")
         except Exception as exc:
             self.logger.warning(f"사용자 커밋 메시지 작성 실패: {exc}")
 
@@ -416,6 +420,22 @@ class SyncAgent(BaseAgent):
         self.logger.info("허브 브랜치 정리 중...")
 
         try:
+            # 1단계: 안전한 브랜치로 체크아웃 (main 또는 origin/main)
+            remote = self.run_context["git_remote"]
+            current_branch = self.run_context["current_branch"]
+
+            try:
+                self.hub_git.checkout(current_branch)
+                self.logger.debug(f"체크아웃: {current_branch}")
+            except Exception:
+                # 브랜치가 없으면 origin/main으로 reset
+                try:
+                    self.hub_git.reset_hard(f"{remote}/{current_branch}")
+                    self.logger.debug(f"Reset: {remote}/{current_branch}")
+                except Exception as e:
+                    self.logger.warning(f"브랜치 전환 실패: {e}")
+
+            # 2단계: commitly/* 브랜치 삭제
             deleted_branches = self.hub_git.delete_branches_with_prefix("commitly/")
 
             self.logger.info(f"✓ {len(deleted_branches)}개 브랜치 삭제")

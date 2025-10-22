@@ -95,8 +95,18 @@ def init_command(args: Any) -> None:
 
     if main_info and venv_path:
         script_command = _write_exec_script(script_path, workspace_path, venv_path, main_info)
-        print(f"✓ commitly_exec.sh 생성 완료: {script_path}")
-        print("  ↳ 버전 관리에 추가하여 원격 저장소에도 반영해주세요.")
+
+        # 검증 추가
+        if _validate_exec_script(script_path):
+            print(f"✓ commitly_exec.sh 생성 완료: {script_path}")
+            print(f"  ↳ 감지된 가상환경: {venv_path.name}")
+            print("  ↳ 버전 관리에 추가하여 원격 저장소에도 반영해주세요.")
+        else:
+            print(f"⚠️ commitly_exec.sh 생성됨: {script_path} (검증 실패, 수동 확인 필요)")
+
+    # python_bin 저장
+    if venv_path and config_path.exists():
+        _save_python_bin_to_config(config_path, venv_path)
 
     if script_command:
         _maybe_update_execution_command(
@@ -153,10 +163,21 @@ def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[st
     Args:
         workspace_path: 워크스페이스 경로
     """
+    # 제외할 디렉토리 목록
+    exclude_dirs = {
+        "venv", ".venv", "env", ".env", "virtualenv",
+        "node_modules", "__pycache__", ".git", ".pytest_cache",
+        ".tox", "site-packages", "dist", "build", ".commitly"
+    }
+
     candidates: list[Path] = []
     for main_path in workspace_path.rglob("main.py"):
-        if any(part.startswith(".") for part in main_path.relative_to(workspace_path).parts[:-1]):
+        rel_parts = main_path.relative_to(workspace_path).parts[:-1]
+
+        # 제외 디렉토리 체크 (점으로 시작하는 것 + 명시적 목록)
+        if any(part.startswith(".") or part in exclude_dirs for part in rel_parts):
             continue
+
         if main_path.is_file():
             candidates.append(main_path)
 
@@ -199,33 +220,80 @@ def _print_multiple_main_warning(candidates: List[str]) -> None:
     print("config.yaml의 execution.command 값을 프로젝트에 맞게 수정한 뒤 다시 실행하세요.")
 
 
+def _is_valid_venv(venv_path: Path) -> bool:
+    """
+    가상환경 유효성 검증
+
+    Args:
+        venv_path: 검증할 디렉토리 경로
+
+    Returns:
+        유효한 가상환경이면 True
+    """
+    # Unix/Linux/macOS: bin/activate 확인
+    if (venv_path / "bin" / "activate").exists():
+        return True
+
+    # Windows: Scripts/activate.bat 확인
+    if (venv_path / "Scripts" / "activate.bat").exists():
+        return True
+
+    # pyvenv.cfg 확인 (모든 플랫폼)
+    if (venv_path / "pyvenv.cfg").exists():
+        return True
+
+    return False
+
+
 def _detect_virtualenv(workspace_path: Path) -> Tuple[Optional[Path], List[str]]:
     """
-    워크스페이스에서 사용할 가상환경 경로를 탐색합니다.
+    Plan B: 3단계 우선순위 기반 가상환경 감지
+
+    우선순위:
+    1. COMMITLY_VENV 환경 변수
+    2. 일반적인 이름 (venv, .venv, env, .env, virtualenv)
+    3. 커스텀 이름 (activate 또는 pyvenv.cfg 존재)
 
     Args:
         workspace_path: 워크스페이스 경로
+
+    Returns:
+        (venv_path, candidates) 튜플
     """
+    import os
+
+    # 우선순위 1: COMMITLY_VENV 환경 변수
+    env_venv = os.getenv("COMMITLY_VENV")
+    if env_venv:
+        venv_path = Path(env_venv)
+        if venv_path.exists() and _is_valid_venv(venv_path):
+            return venv_path, [venv_path.name]
+
+    # 우선순위 2: 일반적인 이름
+    common_names = ["venv", ".venv", "env", ".env", "virtualenv"]
+    for name in common_names:
+        venv_path = workspace_path / name
+        if venv_path.exists() and _is_valid_venv(venv_path):
+            return venv_path, [name]
+
+    # 우선순위 3: 커스텀 이름 (모든 디렉토리 탐색)
     candidates: List[Path] = []
-    for candidate in workspace_path.iterdir():
-        if not candidate.is_dir():
+    for item in workspace_path.iterdir():
+        if not item.is_dir():
             continue
-        if candidate.name.startswith(".") and candidate.name not in (".venv",):
+        if item.name.startswith(".") and item.name not in (".venv",):
             continue
-
-        activate_paths = [candidate / "bin" / "activate", candidate / "Scripts" / "activate"]
-        if any(path.exists() for path in activate_paths):
-            candidates.append(candidate)
-
-    candidates.sort()
+        if _is_valid_venv(item):
+            candidates.append(item)
 
     if not candidates:
         return None, []
 
-    if len(candidates) > 1:
-        return None, [path.name for path in candidates]
+    if len(candidates) == 1:
+        return candidates[0], [candidates[0].name]
 
-    return candidates[0], [candidates[0].name]
+    # 여러 개 발견 시
+    return None, [c.name for c in candidates]
 
 
 def _print_multiple_virtualenv_warning(candidates: List[str]) -> None:
@@ -238,6 +306,73 @@ def _print_multiple_virtualenv_warning(candidates: List[str]) -> None:
     print("⚠️ 여러 개의 가상환경 후보를 발견했습니다. 사용하려는 환경을 선택한 뒤 commitly_exec.sh를 수정하세요:")
     for path in candidates:
         print(f"   - {path}")
+
+
+def _save_python_bin_to_config(config_path: Path, venv_path: Path) -> None:
+    """
+    가상환경의 python 바이너리 경로를 config.yaml에 저장
+
+    Args:
+        config_path: 설정 파일 경로
+        venv_path: 가상환경 경로
+    """
+    # python_bin 경로 결정
+    python_bin_unix = venv_path / "bin" / "python"
+    python_bin_windows = venv_path / "Scripts" / "python.exe"
+
+    if python_bin_unix.exists():
+        python_bin = str(python_bin_unix.resolve())
+    elif python_bin_windows.exists():
+        python_bin = str(python_bin_windows.resolve())
+    else:
+        print(f"⚠️ 가상환경 python 바이너리를 찾을 수 없습니다: {venv_path}")
+        return
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f) or {}
+    except (yaml.YAMLError, OSError) as exc:
+        print(f"⚠️ config.yaml 읽기 실패: {exc}")
+        return
+
+    # execution.python_bin 설정
+    if "execution" not in config_data:
+        config_data["execution"] = {}
+
+    config_data["execution"]["python_bin"] = python_bin
+
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(config_data, f, allow_unicode=True, sort_keys=False)
+        print(f"✓ python_bin 저장: {python_bin}")
+    except OSError as exc:
+        print(f"⚠️ config.yaml 쓰기 실패: {exc}")
+
+
+def _validate_exec_script(script_path: Path) -> bool:
+    """
+    생성된 스크립트가 유효한지 검증
+
+    Args:
+        script_path: 스크립트 경로
+
+    Returns:
+        유효하면 True
+    """
+    if not script_path.exists():
+        return False
+
+    content = script_path.read_text()
+
+    # 필수 항목 체크
+    required_items = ["source", "VENV_DIR", "activate"]
+
+    for item in required_items:
+        if item not in content:
+            print(f"⚠️ commitly_exec.sh 검증 실패: '{item}' 항목 누락")
+            return False
+
+    return True
 
 
 def _write_exec_script(

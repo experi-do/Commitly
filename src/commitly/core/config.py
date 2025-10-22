@@ -22,10 +22,10 @@ class Config:
     def __init__(self, config_path: Optional[Path] = None) -> None:
         """
         Args:
-            config_path: 설정 파일 경로. None이면 현재 디렉토리의 .commitly/config.yaml 사용
+            config_path: 설정 파일 경로. None이면 현재 디렉토리의 config.yaml 사용
         """
         if config_path is None:
-            config_path = Path.cwd() / ".commitly" / "config.yaml"
+            config_path = Path.cwd() / "config.yaml"
 
         self.config_path = config_path
         self._config: Dict[str, Any] = {}
