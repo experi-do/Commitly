@@ -335,7 +335,6 @@ execution:
 
 # 테스트 프로필
 test:
-  command: pytest
   timeout: 300
 
 # 데이터베이스 설정 (SQL 최적화용)
