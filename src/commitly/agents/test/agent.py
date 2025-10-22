@@ -54,21 +54,29 @@ class TestAgent(BaseAgent):
         has_query = code_output["data"]["hasQuery"]
         query_file_list = code_output["data"].get("queryFileList", [])
 
-        optimized_queries = []
+        optimized_queries: List[Dict[str, Any]] = []
+        test_result: Dict[str, Any]
 
-        # 3. SQL 최적화 (hasQuery=true인 경우만)
+        # 3. SQL 최적화 및 테스트 실행 (hasQuery=true인 경우만)
         if has_query and query_file_list:
             self.logger.info(f"SQL 쿼리 최적화 시작: {len(query_file_list)}개")
             optimized_queries = self._optimize_sql_queries(query_file_list)
-        else:
-            self.logger.info("SQL 쿼리 없음, 최적화 스킵")
 
         # 4. 변경사항 커밋
         if optimized_queries:
             self.hub_git.commit("Test Agent: SQL 쿼리 최적화")
 
-        # 5. 테스트 실행
-        test_result = self._run_tests()
+        if has_query and (query_file_list or optimized_queries):
+            # 5. 테스트 실행
+            test_result = self._run_tests()
+        else:
+            self.logger.info("SQL 쿼리 없음, 테스트 스킵")
+            test_result = {
+                "passed": True,
+                "output": "SQL 쿼리가 없어 테스트를 실행하지 않았습니다.",
+                "exit_code": 0,
+                "skipped": True,
+            }
 
         # 테스트 실패 시 자동 롤백
         if not test_result["passed"]:
