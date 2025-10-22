@@ -164,9 +164,11 @@ class RefactoringAgent(BaseAgent):
                 )
 
                 # 변경사항이 있으면 파일 쓰기
-                if refactored_code and refactored_code != original_code:
+                sanitized_code = self._sanitize_llm_code(refactored_code)
+
+                if sanitized_code and sanitized_code != original_code:
                     with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(refactored_code)
+                        f.write(sanitized_code)
 
                     refactorings.append("LLM refactoring")
                     self.logger.debug("LLM 리팩토링 적용")
@@ -189,6 +191,32 @@ class RefactoringAgent(BaseAgent):
             "refactorings": refactorings,
         }
 
+    def _sanitize_llm_code(self, generated_code: str) -> str:
+        """
+        LLM이 반환한 코드에서 마크다운 문법 등을 제거
+
+        Args:
+            generated_code: LLM이 제안한 코드 문자열
+
+        Returns:
+            코드 블록 래핑이 제거된 문자열
+        """
+        stripped = generated_code.strip()
+
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+
+            # 첫 번째 라인이 ``` 또는 ```python 등인 경우 제거
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+
+            # 마지막 라인도 ```이면 제거
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+
+            stripped = "\n".join(lines).strip()
+
+        return stripped
     def _run_ruff_fix(self, file_path: str) -> bool:
         """
         ruff --fix 실행
