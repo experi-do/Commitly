@@ -8,6 +8,21 @@ from typing import Any, List, Optional, Sequence, Tuple
 import yaml
 
 
+def _print_banner() -> None:
+    """
+    Commitly 배너 출력
+    """
+    banner = """
+     ██████╗ ██████╗ ███╗   ███╗███╗   ███╗██╗████████╗██╗     ██╗   ██╗
+    ██╔════╝██╔═══██╗████╗ ████║████╗ ████║██║╚══██╔══╝██║     ╚██╗ ██╔╝
+    ██║     ██║   ██║██╔████╔██║██╔████╔██║██║   ██║   ██║      ╚████╔╝
+    ██║     ██║   ██║██║╚██╔╝██║██║╚██╔╝██║██║   ██║   ██║       ╚██╔╝
+    ╚██████╗╚██████╔╝██║ ╚═╝ ██║██║ ╚═╝ ██║██║   ██║   ███████╗   ██║
+     ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝╚═╝   ╚═╝   ╚══════╝   ╚═╝
+    """
+    print(banner)
+
+
 def init_command(args: Any) -> None:
     """
     Commitly 프로젝트 초기화
@@ -15,6 +30,7 @@ def init_command(args: Any) -> None:
     Args:
         args: CLI 인자
     """
+    _print_banner()
     print("Commitly 프로젝트 초기화 중...")
 
     workspace_path = Path.cwd()
@@ -28,8 +44,6 @@ def init_command(args: Any) -> None:
     (commitly_dir / "logs").mkdir(exist_ok=True)
     (commitly_dir / "slack").mkdir(exist_ok=True)
     (commitly_dir / "reports").mkdir(exist_ok=True)
-
-    print(f"✓ .commitly 디렉토리 생성 완료: {commitly_dir}")
 
     # .gitignore 업데이트
     _update_gitignore(workspace_path)
@@ -55,7 +69,6 @@ def init_command(args: Any) -> None:
     else:
         if main_command:
             _write_config_with_command(config_path, main_command)
-            print(f"✓ 실행 커맨드를 자동 설정하여 config.yaml을 생성했습니다: {main_command}")
         elif len(main_candidates) > 1:
             missing_items.append("config.yaml")
             _print_multiple_main_warning(main_candidates)
@@ -97,11 +110,7 @@ def init_command(args: Any) -> None:
         script_command = _write_exec_script(script_path, workspace_path, venv_path, main_info)
 
         # 검증 추가
-        if _validate_exec_script(script_path):
-            print(f"✓ commitly_exec.sh 생성 완료: {script_path}")
-            print(f"  ↳ 감지된 가상환경: {venv_path.name}")
-            print("  ↳ 버전 관리에 추가하여 원격 저장소에도 반영해주세요.")
-        else:
+        if not _validate_exec_script(script_path):
             print(f"⚠️ commitly_exec.sh 생성됨: {script_path} (검증 실패, 수동 확인 필요)")
 
     # python_bin 저장
@@ -115,11 +124,34 @@ def init_command(args: Any) -> None:
             allowed_existing=(None, "python main.py", main_command),
         )
 
-    print("\n✓ Commitly 초기화가 완료되었습니다!")
-    print("\n다음 단계:")
-    print("1. config.yaml 내용을 확인하고 필요한 값이 정확한지 검증하세요")
-    print("2. .env 파일에 필요한 API 키와 환경 변수가 설정되어 있는지 확인하세요")
-    print("3. commitly commit 명령어로 파이프라인을 실행하세요")
+    print("✓ Commitly 초기화가 완료되었습니다!")
+    _print_next_steps()
+    _print_available_commands()
+
+
+def _print_next_steps() -> None:
+    """
+    초기화 완료 후 다음 단계 출력
+    """
+    print("✓ config.yaml, .env 내용을 확인하고 필요한 값이 정확한지 확인하세요")
+
+
+def _print_available_commands() -> None:
+    """
+    사용 가능한 Commitly 명령어 출력
+    """
+    print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("🚀 사용 가능한 명령어:")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    commands = [
+        ("commitly commit -m <message>", "변경사항을 커밋하고 파이프라인 실행"),
+        ("commitly status", "파이프라인 상태 확인"),
+        ("commitly report", "파이프라인 실행 보고서 생성"),
+        ("commitly init", "프로젝트 재초기화"),
+    ]
+    for cmd, description in commands:
+        print(f"  • {cmd:<35} {description}")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 
 def _update_gitignore(workspace_path: Path) -> None:
@@ -151,9 +183,6 @@ def _update_gitignore(workspace_path: Path) -> None:
     if "# Commitly" not in existing_lines:
         with open(gitignore_path, "a", encoding="utf-8") as f:
             f.write("\n".join(commitly_entries) + "\n")
-        print(f"✓ .gitignore 업데이트 완료")
-    else:
-        print(".gitignore에 Commitly 항목이 이미 존재합니다")
 
 
 def _discover_main_command(workspace_path: Path) -> Tuple[Optional[str], List[str], Optional[Tuple[str, bool]]]:
@@ -344,7 +373,6 @@ def _save_python_bin_to_config(config_path: Path, venv_path: Path) -> None:
     try:
         with open(config_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_data, f, allow_unicode=True, sort_keys=False)
-        print(f"✓ python_bin 저장: {python_bin}")
     except OSError as exc:
         print(f"⚠️ config.yaml 쓰기 실패: {exc}")
 
