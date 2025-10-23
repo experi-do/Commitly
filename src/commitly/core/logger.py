@@ -113,7 +113,7 @@ class CommitlyLogger:
 def get_logger(
     agent_name: str,
     workspace_path: Optional[Path] = None,
-    log_to_console: bool = True,
+    log_to_console: bool = False,
 ) -> CommitlyLogger:
     """
     로거 인스턴스 생성 헬퍼 함수

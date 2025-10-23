@@ -46,7 +46,7 @@ class CommitlyPipeline:
         self.config = Config(config_path)
 
         # 로거 초기화
-        self.logger = CommitlyLogger("pipeline", workspace_path)
+        self.logger = CommitlyLogger("pipeline", workspace_path, log_to_console=False)
 
         # LLM 클라이언트 초기화
         self.llm_client = self._init_llm_client()
@@ -305,6 +305,8 @@ class CommitlyPipeline:
         self.logger.info("Clone Agent 시작")
         self.logger.info("=" * 60)
 
+        print("[1/6] ⏳ Clone Agent...", end="", flush=True)
+
         try:
             agent = CloneAgent(self.run_context)
             output = agent.run()
@@ -312,10 +314,13 @@ class CommitlyPipeline:
             if output["status"] != "success":
                 raise RuntimeError(f"Clone Agent 실패: {output.get('error')}")
 
+            print("\r[1/6] ✓ Clone Agent" + " " * 20)
             state["clone_output"] = output
             return state
 
         except Exception as e:
+            print(f"\r[1/6] ❌ Clone Agent 실패: {e}")
+            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/clone_agent/")
             self.logger.error(f"Clone Agent 오류: {e}")
             rollback_and_cleanup(self.run_context, "clone_agent", str(e))
             raise
@@ -326,6 +331,8 @@ class CommitlyPipeline:
         self.logger.info("Code Agent 시작")
         self.logger.info("=" * 60)
 
+        print("[2/6] ⏳ Code Agent...", end="", flush=True)
+
         try:
             agent = CodeAgent(self.run_context)
             output = agent.run()
@@ -333,10 +340,19 @@ class CommitlyPipeline:
             if output["status"] != "success":
                 raise RuntimeError(f"Code Agent 실패: {output.get('error')}")
 
+            # 추가 정보 표시
+            data = output.get("data", {})
+            query_file_list = data.get("queryFileList", [])
+            query_count = len(query_file_list) if isinstance(query_file_list, list) else 0
+            extra_info = f" (SQL 쿼리 {query_count}개 발견)" if query_count > 0 else ""
+
+            print(f"\r[2/6] ✓ Code Agent{extra_info}" + " " * 20)
             state["code_output"] = output
             return state
 
         except Exception as e:
+            print(f"\r[2/6] ❌ Code Agent 실패: {e}")
+            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/code_agent/")
             self.logger.error(f"Code Agent 오류: {e}")
             rollback_and_cleanup(self.run_context, "code_agent", str(e))
             raise
@@ -347,6 +363,8 @@ class CommitlyPipeline:
         self.logger.info("Test Agent 시작")
         self.logger.info("=" * 60)
 
+        print("[3/6] ⏳ Test Agent...", end="", flush=True)
+
         try:
             agent = TestAgent(self.run_context)
             output = agent.run()
@@ -354,10 +372,19 @@ class CommitlyPipeline:
             if output["status"] != "success":
                 raise RuntimeError(f"Test Agent 실패: {output.get('error')}")
 
+            # 추가 정보 표시
+            data = output.get("data", {})
+            optimized_queries = data.get("optimized_queries", [])
+            optimized_count = len(optimized_queries) if isinstance(optimized_queries, list) else 0
+            extra_info = f" (SQL 최적화 {optimized_count}개)" if optimized_count > 0 else ""
+
+            print(f"\r[3/6] ✓ Test Agent{extra_info}" + " " * 20)
             state["test_output"] = output
             return state
 
         except Exception as e:
+            print(f"\r[3/6] ❌ Test Agent 실패: {e}")
+            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/test_agent/")
             self.logger.error(f"Test Agent 오류: {e}")
             rollback_and_cleanup(self.run_context, "test_agent", str(e))
             raise
@@ -368,6 +395,8 @@ class CommitlyPipeline:
         self.logger.info("Refactoring Agent 시작")
         self.logger.info("=" * 60)
 
+        print("[4/6] ⏳ Refactoring Agent...", end="", flush=True)
+
         try:
             agent = RefactoringAgent(self.run_context)
             output = agent.run()
@@ -375,10 +404,19 @@ class CommitlyPipeline:
             if output["status"] != "success":
                 raise RuntimeError(f"Refactoring Agent 실패: {output.get('error')}")
 
+            # 추가 정보 표시
+            data = output.get("data", {})
+            refactored_files = data.get("refactored_files", [])
+            refactored_count = len(refactored_files) if isinstance(refactored_files, list) else 0
+            extra_info = f" (파일 {refactored_count}개 개선)" if refactored_count > 0 else ""
+
+            print(f"\r[4/6] ✓ Refactoring Agent{extra_info}" + " " * 20)
             state["refactoring_output"] = output
             return state
 
         except Exception as e:
+            print(f"\r[4/6] ❌ Refactoring Agent 실패: {e}")
+            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/refactoring_agent/")
             self.logger.error(f"Refactoring Agent 오류: {e}")
             rollback_and_cleanup(self.run_context, "refactoring_agent", str(e))
             raise
@@ -389,6 +427,8 @@ class CommitlyPipeline:
         self.logger.info("Sync Agent 시작")
         self.logger.info("=" * 60)
 
+        print("[5/6] ⏳ Sync Agent...", end="", flush=True)
+
         try:
             agent = SyncAgent(self.run_context)
             output = agent.run()
@@ -396,10 +436,19 @@ class CommitlyPipeline:
             if output["status"] != "success":
                 raise RuntimeError(f"Sync Agent 실패: {output.get('error')}")
 
+            # 추가 정보 표시
+            data = output.get("data", {})
+            if data.get("pushed"):
+                print(f"\r[5/6] ✓ Sync Agent (원격 push 완료)" + " " * 20)
+            else:
+                print(f"\r[5/6] ✓ Sync Agent (push 취소됨)" + " " * 20)
+
             state["sync_output"] = output
             return state
 
         except Exception as e:
+            print(f"\r[5/6] ❌ Sync Agent 실패: {e}")
+            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/sync_agent/")
             self.logger.error(f"Sync Agent 오류: {e}")
             rollback_and_cleanup(self.run_context, "sync_agent", str(e))
             raise
@@ -410,6 +459,8 @@ class CommitlyPipeline:
         self.logger.info("Slack Agent 시작")
         self.logger.info("=" * 60)
 
+        print("[6/6] ⏳ Slack Agent...", end="", flush=True)
+
         try:
             agent = SlackAgent(self.run_context)
             output = agent.run()
@@ -417,10 +468,17 @@ class CommitlyPipeline:
             if output["status"] != "success":
                 raise RuntimeError(f"Slack Agent 실패: {output.get('error')}")
 
+            # 추가 정보 표시
+            data = output.get("data", {})
+            matched_count = len(data.get("matched_messages", []))
+            extra_info = f" (피드백 {matched_count}개 매칭)" if matched_count > 0 else ""
+
+            print(f"\r[6/6] ✓ Slack Agent{extra_info}" + " " * 20)
             state["slack_output"] = output
             return state
 
         except Exception as e:
+            print(f"\r[6/6] ⚠ Slack Agent 실패 (계속 진행)" + " " * 20)
             self.logger.error(f"Slack Agent 오류: {e}")
             # Slack 실패는 치명적 오류 아님, 계속 진행
             self.logger.warning("Slack Agent 실패, 계속 진행")
@@ -436,12 +494,24 @@ class CommitlyPipeline:
         self.logger.info("Report Agent 시작")
         self.logger.info("=" * 60)
 
+        # Report Agent는 프로그레스 바 없이 조용히 실행
         try:
             agent = ReportAgent(self.run_context)
             output = agent.run()
 
             if output["status"] != "success":
                 raise RuntimeError(f"Report Agent 실패: {output.get('error')}")
+
+            # 성공 시 간단한 메시지만 출력
+            data = output.get("data", {})
+            report_path = data.get("report_path", "")
+            if report_path:
+                from pathlib import Path
+                try:
+                    rel_path = Path(report_path).relative_to(Path.cwd())
+                    print(f"\n📄 보고서 생성: {rel_path}")
+                except ValueError:
+                    print(f"\n📄 보고서 생성: {report_path}")
 
             state["report_output"] = output
             return state

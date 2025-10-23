@@ -367,24 +367,14 @@ class SlackAgent(BaseAgent):
             보고서 작성 여부
         """
         if not matched_messages:
-            print("\n연관 피드백 없음")
+            # 프로그레스 바에서 이미 표시되므로 별도 출력 안 함
             return False
 
-        # 요약 출력
-        print("\n" + "=" * 60)
-        print(f"📬 Slack 피드백 매칭 결과: {len(matched_messages)}개")
-        print("=" * 60)
-
-        for i, msg in enumerate(matched_messages[:5], 1):
-            print(f"{i}. {msg['text'][:50]}... (사유: {msg['match_reason']})")
-
-        if len(matched_messages) > 5:
-            print(f"... 외 {len(matched_messages) - 5}개")
-
-        print("=" * 60)
+        # 간결한 질문만 표시 (매칭 수는 프로그레스 바에서 이미 표시됨)
+        print(f"\n📬 {len(matched_messages)}개의 Slack 피드백이 매칭되었습니다.")
 
         # 보고서 작성 여부 질문
-        response = input("\n보고서 작성할까요? (y/n): ").strip().lower()
+        response = input("보고서 작성할까요? (y/n): ").strip().lower()
 
         create_report = response == "y"
 

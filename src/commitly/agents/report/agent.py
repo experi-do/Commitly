@@ -59,8 +59,7 @@ class ReportAgent(BaseAgent):
         # 6. 보고서 생성
         report_path = self._generate_report(sanitized_data, report_config)
 
-        # 7. 완료 로그 출력
-        print(f"\n✓ 보고서 생성 완료: {report_path}")
+        # 7. 완료 로그 (프로그레스 바에서 표시하므로 여기서는 로거만 사용)
         self.logger.info(f"보고서 생성 완료: {report_path}")
 
         # 8. 결과 반환

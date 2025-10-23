@@ -260,9 +260,59 @@ class SyncAgent(BaseAgent):
         Returns:
             승인 여부
         """
-        # 요약 출력
+        # 간결한 요약 출력
+        print("\n📋 변경사항 요약")
+        print(f"커밋: \"{summary['commit_message']}\"")
+
+        files_changed = summary['stats']['files_changed']
+        additions = summary['stats']['additions']
+        deletions = summary['stats']['deletions']
+        print(f"파일: {files_changed}개 변경 (+{additions}/-{deletions} 라인)")
+
+        # 에이전트 결과 요약
+        agent_results = summary["agent_results"]
+        highlights = []
+
+        if agent_results.get("code_agent", {}).get("has_query"):
+            highlights.append(f"SQL 쿼리 {agent_results['code_agent']['query_count']}개")
+
+        if agent_results.get("test_agent", {}).get("optimized_queries", 0) > 0:
+            highlights.append(f"SQL 최적화 {agent_results['test_agent']['optimized_queries']}개")
+
+        if agent_results.get("refactoring_agent", {}).get("refactored_files", 0) > 0:
+            highlights.append(f"리팩토링 {agent_results['refactoring_agent']['refactored_files']}개 파일")
+
+        if highlights:
+            print(", ".join(highlights))
+
+        # 승인 요청 (상세 보기 옵션 포함)
+        remote_branch = f"{self.run_context['git_remote']}/{target_branch}"
+        while True:
+            response = input(
+                f"\nPush 하시겠습니까? (y/n/d[상세보기]): "
+            ).strip().lower()
+
+            if response == "d":
+                # 상세 정보 표시
+                self._show_detailed_summary(summary, agent_results)
+                continue
+            elif response in ["y", "n"]:
+                approved = response == "y"
+                self.logger.info(f"사용자 입력: {response} (승인: {approved})")
+                return approved
+            else:
+                print("올바른 입력이 아닙니다. y, n, 또는 d를 입력하세요.")
+
+    def _show_detailed_summary(self, summary: Dict[str, Any], agent_results: Dict[str, Any]) -> None:
+        """
+        상세한 변경사항 표시
+
+        Args:
+            summary: 변경사항 요약
+            agent_results: 에이전트 결과
+        """
         print("\n" + "=" * 60)
-        print("📋 Commitly 변경사항 요약")
+        print("📋 상세 변경사항")
         print("=" * 60)
 
         print(f"\n커밋 메시지: {summary['commit_message']}")
@@ -270,35 +320,32 @@ class SyncAgent(BaseAgent):
         print(f"추가: +{summary['stats']['additions']} 라인")
         print(f"삭제: -{summary['stats']['deletions']} 라인")
 
-        # 에이전트 결과
-        agent_results = summary["agent_results"]
+        # Code Agent 결과
+        if agent_results.get("code_agent"):
+            code_data = agent_results["code_agent"]
+            print("\n[Code Agent]")
+            if code_data.get("has_query"):
+                print(f"  - SQL 쿼리: {code_data['query_count']}개 발견")
+            if code_data.get("static_check_passed"):
+                print("  - 정적 검사: 통과")
 
-        if agent_results.get("code_agent", {}).get("has_query"):
-            print(f"\nSQL 쿼리: {agent_results['code_agent']['query_count']}개 발견")
+        # Test Agent 결과
+        if agent_results.get("test_agent"):
+            test_data = agent_results["test_agent"]
+            print("\n[Test Agent]")
+            if test_data.get("optimized_queries", 0) > 0:
+                print(f"  - SQL 최적화: {test_data['optimized_queries']}개 쿼리 개선")
+            if test_data.get("test_passed"):
+                print("  - 테스트: 통과")
 
-        if agent_results.get("test_agent", {}).get("optimized_queries", 0) > 0:
-            print(
-                f"SQL 최적화: {agent_results['test_agent']['optimized_queries']}개 쿼리 개선"
-            )
-
-        if agent_results.get("refactoring_agent", {}).get("refactored_files", 0) > 0:
-            print(
-                f"리팩토링: {agent_results['refactoring_agent']['refactored_files']}개 파일 개선"
-            )
+        # Refactoring Agent 결과
+        if agent_results.get("refactoring_agent"):
+            refactor_data = agent_results["refactoring_agent"]
+            print("\n[Refactoring Agent]")
+            if refactor_data.get("refactored_files", 0) > 0:
+                print(f"  - 리팩토링: {refactor_data['refactored_files']}개 파일 개선")
 
         print("\n" + "=" * 60)
-
-        # 승인 요청
-        remote_branch = f"{self.run_context['git_remote']}/{target_branch}"
-        response = input(
-            f"\n원격 저장소에 새 브랜치({remote_branch})로 push할까요? (y/n): "
-        ).strip().lower()
-
-        approved = response == "y"
-
-        self.logger.info(f"사용자 입력: {response} (승인: {approved})")
-
-        return approved
 
     def _apply_hub_to_local(self) -> None:
         """
