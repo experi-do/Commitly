@@ -15,7 +15,7 @@ from langgraph.graph import StateGraph, END
 
 from commitly.agents.clone.agent import CloneAgent
 from commitly.agents.code.agent import CodeAgent
-from commitly.agents.refactoring.agent import RefactoringAgent
+from commitly.agents.review.agent import ReviewAgent
 from commitly.agents.report.agent import ReportAgent
 from commitly.agents.slack.agent import SlackAgent
 from commitly.agents.sync.agent import SyncAgent
@@ -271,7 +271,7 @@ class CommitlyPipeline:
         workflow.add_node("clone", self._run_clone_agent)
         workflow.add_node("code", self._run_code_agent)
         workflow.add_node("test", self._run_test_agent)
-        workflow.add_node("refactoring", self._run_refactoring_agent)
+        workflow.add_node("review", self._run_review_agent)
         workflow.add_node("sync", self._run_sync_agent)
         workflow.add_node("slack", self._run_slack_agent)
         workflow.add_node("report", self._run_report_agent)
@@ -280,8 +280,8 @@ class CommitlyPipeline:
         workflow.set_entry_point("clone")
         workflow.add_edge("clone", "code")
         workflow.add_edge("code", "test")
-        workflow.add_edge("test", "refactoring")
-        workflow.add_edge("refactoring", "sync")
+        workflow.add_edge("test", "review")
+        workflow.add_edge("review", "sync")
         workflow.add_edge("sync", "slack")
 
         # Slack → Report (조건부)
@@ -389,36 +389,52 @@ class CommitlyPipeline:
             rollback_and_cleanup(self.run_context, "test_agent", str(e))
             raise
 
-    def _run_refactoring_agent(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Refactoring Agent 실행"""
+    def _run_review_agent(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Review Agent 실행"""
         self.logger.info("=" * 60)
-        self.logger.info("Refactoring Agent 시작")
+        self.logger.info("Review Agent 시작")
         self.logger.info("=" * 60)
 
-        print("[4/6] ⏳ Refactoring Agent...", end="", flush=True)
+        print("[4/6] ⏳ Review Agent...", end="", flush=True)
 
         try:
-            agent = RefactoringAgent(self.run_context)
+            agent = ReviewAgent(self.run_context)
             output = agent.run()
 
             if output["status"] != "success":
-                raise RuntimeError(f"Refactoring Agent 실패: {output.get('error')}")
+                raise RuntimeError(f"Review Agent 실패: {output.get('error')}")
 
             # 추가 정보 표시
             data = output.get("data", {})
-            refactored_files = data.get("refactored_files", [])
-            refactored_count = len(refactored_files) if isinstance(refactored_files, list) else 0
-            extra_info = f" (파일 {refactored_count}개 개선)" if refactored_count > 0 else ""
+            issue_count = data.get("issue_count", {})
+            total_issues = sum(issue_count.values()) if isinstance(issue_count, dict) else 0
+            assessment = data.get("overall_assessment", "UNKNOWN")
 
-            print(f"\r[4/6] ✓ Refactoring Agent{extra_info}" + " " * 20)
-            state["refactoring_output"] = output
+            if total_issues > 0:
+                # 심각도별 요약
+                critical = issue_count.get("critical", 0)
+                high = issue_count.get("high", 0)
+                severity_info = ""
+                if critical > 0:
+                    severity_info = f", 🔴{critical} "
+                if high > 0:
+                    severity_info += f"🟠{high} "
+                if severity_info:
+                    extra_info = f" ({assessment}{severity_info}외 {total_issues - critical - high}개)"
+                else:
+                    extra_info = f" ({assessment}, {total_issues}개)"
+            else:
+                extra_info = f" ({assessment})"
+
+            print(f"\r[4/6] ✓ Review Agent{extra_info}" + " " * 20)
+            state["review_output"] = output
             return state
 
         except Exception as e:
-            print(f"\r[4/6] ❌ Refactoring Agent 실패: {e}")
-            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/refactoring_agent/")
-            self.logger.error(f"Refactoring Agent 오류: {e}")
-            rollback_and_cleanup(self.run_context, "refactoring_agent", str(e))
+            print(f"\r[4/6] ❌ Review Agent 실패: {e}")
+            print(f"    로그: {self.run_context['workspace_path']}/.commitly/logs/review_agent/")
+            self.logger.error(f"Review Agent 오류: {e}")
+            rollback_and_cleanup(self.run_context, "review_agent", str(e))
             raise
 
     def _run_sync_agent(self, state: Dict[str, Any]) -> Dict[str, Any]:
