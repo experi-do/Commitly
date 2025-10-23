@@ -274,7 +274,6 @@ class CommitlyPipeline:
         workflow.add_node("review", self._run_review_agent)
         workflow.add_node("sync", self._run_sync_agent)
         workflow.add_node("slack", self._run_slack_agent)
-        workflow.add_node("report", self._run_report_agent)
 
         # 엣지 추가 (순차적 실행)
         workflow.set_entry_point("clone")
@@ -283,19 +282,9 @@ class CommitlyPipeline:
         workflow.add_edge("test", "review")
         workflow.add_edge("review", "sync")
         workflow.add_edge("sync", "slack")
-
-        # Slack → Report (조건부)
-        workflow.add_conditional_edges(
-            "slack",
-            self._should_create_report,
-            {
-                "create_report": "report",
-                "end": END,
-            },
-        )
-
-        # Report → END
-        workflow.add_edge("report", END)
+        
+        # Slack → END (Report는 파이프라인에서 제외)
+        workflow.add_edge("slack", END)
 
         return workflow.compile()
 

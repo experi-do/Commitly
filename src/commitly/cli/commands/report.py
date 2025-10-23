@@ -2,12 +2,41 @@
 report 명령어 구현
 """
 
+import os
 from pathlib import Path
 from typing import Any
 
 from commitly.agents.report.agent import ReportAgent
 from commitly.core.config import Config
 from commitly.core.context import RunContext
+
+
+def _load_env_file(workspace_path: Path) -> None:
+    """
+    .env 파일 로드
+    
+    Args:
+        workspace_path: 워크스페이스 경로
+    """
+    env_file = workspace_path / ".env"
+    
+    if not env_file.exists():
+        return
+    
+    with open(env_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            
+            if "=" in line:
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                
+                # 환경 변수에 설정 (이미 있으면 덮어쓰지 않음)
+                if key not in os.environ:
+                    os.environ[key] = value
 
 
 def report_command(args: Any) -> None:
@@ -25,6 +54,9 @@ def report_command(args: Any) -> None:
         print(f"❌ 설정 파일을 찾을 수 없습니다: {config_path}")
         print("commitly init 명령어로 프로젝트를 초기화하세요.")
         return
+
+    # .env 파일 로드
+    _load_env_file(workspace_path)
 
     print("Commitly 보고서 생성 중...")
     print()
@@ -46,6 +78,8 @@ def report_command(args: Any) -> None:
             "project_name": workspace_path.name,
             "workspace_path": str(workspace_path),
             "hub_path": "",
+            "config_path": str(config_path),
+            "config": config,
             "git_remote": "origin",
             "current_branch": "main",
             "latest_local_commits": [],

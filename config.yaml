@@ -51,7 +51,7 @@ slack:
 
 # 보고서 설정
 report:
-  format: md
+  format: notion  # md, notion, pdf, html
   output_path: .commitly/reports
   filter:
     labels: []
@@ -59,3 +59,8 @@ report:
   privacy:
     anonymize_user: false
     redact_patterns: []
+
+# 노션 설정
+notion:
+  token: ${NOTION_TOKEN}
+  page_id: ${NOTION_PAGE_ID}

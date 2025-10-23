@@ -95,14 +95,11 @@ class SlackAgent(BaseAgent):
         # 8. 결과 저장
         self._save_results(matched_messages, slack_config)
 
-        # 9. 사용자에게 보고서 작성 여부 질문
-        create_report = self._ask_create_report(matched_messages)
-
-        # 10. 결과 반환
+        # 9. 결과 반환 (보고서는 별도 명령어로 생성)
         return {
             "matched_messages": matched_messages,
             "auto_replied": auto_replied,
-            "create_report": create_report,
+            "create_report": False,  # 보고서는 'commitly report' 명령어로 별도 생성
         }
 
     def _get_slack_config(self) -> Dict[str, Any]:
