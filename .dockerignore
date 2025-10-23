@@ -1,0 +1,102 @@
+# ==================================================================================
+# .dockerignore - Docker 빌드 시 제외할 파일/디렉토리
+#
+# 빌드 컨텍스트에서 제외되므로 이미지 크기 감소 및 빌드 속도 향상
+# ==================================================================================
+
+# Git 관련
+.git
+.gitignore
+.gitattributes
+
+# Python 관련
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / 에디터
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.env.local
+.env.*.local
+
+# 의존성
+poetry.lock  # 선택: 재현성이 중요하면 포함
+Pipfile.lock
+
+# 로컬 데이터
+.commitly/
+.commitly_hub_*
+data/
+logs/
+reports/
+cache/
+
+# 임시 파일
+*.tmp
+*.temp
+*.log
+*.pid
+*.sock
+
+# 테스트 관련
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+*.cover
+pytest-results/
+
+# 문서
+docs/_build/
+site/
+
+# Docker 관련
+docker-compose.override.yml
+.dockerignore
+
+# 환경 파일
+.env
+.env.production
+.env.staging
+.env.test
+.env.local
+
+# CI/CD 관련
+.github/workflows/*.yml
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# 기타
+README.md
+LICENSE
+CHANGELOG.md
+*.md

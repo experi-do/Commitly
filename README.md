@@ -11,6 +11,12 @@
 
 ---
 
+## 👥 기여 가이드
+- 저장소 운영 규칙과 개발 흐름은 `AGENTS.md`의 **Repository Guidelines** 문서를 참고하세요.
+- 아키텍처 개요는 `Architecture.md`, 개선 우선순위는 `IMPROVEMENT_PLAN.md`에서 확인할 수 있습니다.
+
+---
+
 ## ✨ 주요 기능
 
 ### 자동 파이프라인

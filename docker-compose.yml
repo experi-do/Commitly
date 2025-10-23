@@ -1,0 +1,243 @@
+# ==================================================================================
+# docker-compose.yml - Commitly 완전한 스택 구성
+#
+# 서비스:
+# 1. commitly       - Commitly 메인 파이프라인 (Python)
+# 2. postgres       - PostgreSQL 데이터베이스 (SQL 최적화용)
+# 3. redis          - Redis 캐시 (선택사항)
+# 4. slack-webhook  - Slack 알림용 프록시 (선택사항)
+# 5. commitly-web   - WebUI 대시보드 (향후 추가)
+#
+# 사용법:
+#   개발:     docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   프로덕션: docker-compose -f docker-compose.yml up -d
+#   테스트:   docker-compose -f docker-compose.yml -f docker-compose.test.yml up
+#
+# ==================================================================================
+
+version: '3.9'
+
+services:
+  # ============================================================================
+  # Commitly 메인 서비스
+  # ============================================================================
+  commitly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: commitly
+
+    # 환경 변수
+    environment:
+      # Python 설정
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+      # Commitly 설정
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+
+      # OpenAI API
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-test-key}
+
+      # 데이터베이스
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-commitly}
+      DB_PASSWORD: ${DB_PASSWORD:-commitly123}
+      DB_NAME: ${DB_NAME:-commitly_db}
+
+      # Redis (선택사항)
+      REDIS_URL: redis://redis:6379/0
+
+      # Slack (선택사항)
+      SLACK_TOKEN: ${SLACK_TOKEN:-}
+      SLACK_CHANNEL: ${SLACK_CHANNEL:-commits}
+
+    # 볼륨 마운트
+    volumes:
+      # 로컬 저장소와 동기화
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker 소켓 (선택사항)
+      - ./data/.commitly:/app/.commitly              # Commitly 데이터
+      - ./data/.env:/app/.env                       # 환경 파일
+      - ./config.yaml:/app/config.yaml              # 설정 파일
+      - ./hub_repos:/app/hub_repos                  # Hub 저장소 (대용량)
+
+    # 포트
+    ports:
+      - "8000:8000"  # 향후 WebUI 대시보드용
+
+    # 네트워크
+    networks:
+      - commitly-network
+
+    # 의존성
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # 재시작 정책
+    restart: unless-stopped
+
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "commitly", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # 리소스 제한
+    resources:
+      limits:
+        cpus: '2'
+        memory: 2G
+      reservations:
+        cpus: '1'
+        memory: 1G
+
+  # ============================================================================
+  # PostgreSQL 데이터베이스 (SQL 최적화용)
+  # ============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: commitly-postgres
+
+    environment:
+      POSTGRES_USER: ${DB_USER:-commitly}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-commitly123}
+      POSTGRES_DB: ${DB_NAME:-commitly_db}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+
+    volumes:
+      # 데이터 지속성
+      - postgres_data:/var/lib/postgresql/data
+
+      # 초기화 스크립트 (선택사항)
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+
+    ports:
+      - "5432:5432"
+
+    networks:
+      - commitly-network
+
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-commitly}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    restart: unless-stopped
+
+    # 리소스 제한
+    resources:
+      limits:
+        cpus: '1'
+        memory: 512M
+
+  # ============================================================================
+  # Redis 캐시 (선택사항)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: commitly-redis
+
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis123}
+
+    volumes:
+      - redis_data:/data
+
+    ports:
+      - "6379:6379"
+
+    networks:
+      - commitly-network
+
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    restart: unless-stopped
+
+    # 리소스 제한
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 256M
+
+  # ============================================================================
+  # Slack 웹훅 프록시 (선택사항 - 로컬 테스트용)
+  # ============================================================================
+  slack-webhook:
+    image: nginx:alpine
+    container_name: commitly-slack-webhook
+
+    volumes:
+      - ./nginx/slack-webhook.conf:/etc/nginx/conf.d/default.conf
+
+    ports:
+      - "9000:80"
+
+    networks:
+      - commitly-network
+
+    restart: unless-stopped
+
+    profiles:
+      - slack-testing
+
+  # ============================================================================
+  # pgAdmin - PostgreSQL 관리 도구 (선택사항 - 개발용)
+  # ============================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: commitly-pgadmin
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@commitly.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    ports:
+      - "5050:80"
+
+    networks:
+      - commitly-network
+
+    restart: unless-stopped
+
+    profiles:
+      - dev
+
+# ============================================================================
+# 네트워크
+# ============================================================================
+networks:
+  commitly-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# ============================================================================
+# 볼륨
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local

@@ -1,0 +1,115 @@
+# ==================================================================================
+# docker-compose.test.yml - 테스트 환경 오버라이드
+#
+# 사용법:
+#   docker-compose -f docker-compose.yml -f docker-compose.test.yml up --abort-on-container-exit
+#
+# 변경사항:
+# - 테스트 스테이지 사용
+# - pytest 자동 실행
+# - 테스트 데이터베이스
+# - 커버리지 리포트 생성
+# ==================================================================================
+
+version: '3.9'
+
+services:
+  commitly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test  # ← test 스테이지 사용
+
+    environment:
+      ENVIRONMENT: test
+      LOG_LEVEL: DEBUG
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: test_user
+      DB_PASSWORD: test_password
+      DB_NAME: test_db
+      REDIS_URL: redis://redis:6379/1
+
+    volumes:
+      # 테스트 소스 마운트
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+
+      # 테스트 결과 저장
+      - ./test_results:/app/test_results
+
+      # 커버리지 리포트
+      - ./coverage_reports:/app/coverage_reports
+
+      # .commitly 임시 디렉토리
+      - test_commitly_data:/app/.commitly
+
+    # 테스트 실행 후 종료
+    restart: no
+    stdin_open: false
+    tty: false
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+
+    # 테스트용 임시 스토리지
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+
+    restart: no
+
+  redis:
+    # 테스트용 임시 스토리지
+    volumes:
+      - test_redis_data:/data
+
+    restart: no
+
+  # ============================================================================
+  # 테스트 결과 수집 (선택사항)
+  # ============================================================================
+  test-reporter:
+    image: alpine:latest
+    container_name: commitly-test-reporter
+
+    volumes:
+      - ./test_results:/results
+      - ./coverage_reports:/coverage
+
+    command: |
+      sh -c "
+        if [ -f /results/junit.xml ]; then
+          echo '✓ Test Results Generated'
+          cat /results/junit.xml
+        fi
+        if [ -f /coverage/coverage.xml ]; then
+          echo '✓ Coverage Report Generated'
+          cat /coverage/coverage.xml
+        fi
+      "
+
+    depends_on:
+      - commitly
+
+    restart: no
+
+# ============================================================================
+# 테스트 전용 볼륨
+# ============================================================================
+volumes:
+  test_postgres_data:
+    driver: local
+  test_redis_data:
+    driver: local
+  test_commitly_data:
+    driver: local

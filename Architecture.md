@@ -701,6 +701,7 @@ commitly report --issue "hotfix-api-timeout" --format json
 
 ## 14. 참조 문서
 
+- **Repository Guidelines**: `AGENTS.md` - 기여 규칙과 개발 워크플로
 - **PRD**: `PRD.md` - 제품 요구사항 및 목표
 - **Agent 설계**:
   - `CloneAgent.md` - 허브 동기화 로직
